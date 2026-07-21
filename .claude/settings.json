@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__google_drive__google_drive-get_drive_file_content",
+      "Bash(gh repo *)",
+      "Bash(rtk gh *)",
+      "Bash(curl -sL https://raw.githubusercontent.com/oktaforai-okta/sample-mcp-servers/main/hr-system-mcp/README.md)",
+      "Bash(curl -sL https://raw.githubusercontent.com/oktaforai-okta/sample-mcp-servers/main/hr-system-mcp/env.example)",
+      "Bash(gh api *)",
+      "Bash(rtk ls *)"
+    ]
+  }
+}
