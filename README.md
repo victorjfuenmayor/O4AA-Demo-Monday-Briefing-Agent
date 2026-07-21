@@ -47,37 +47,17 @@ briefing-agent/         the agent: calls all four MCPs, narrates the result
    python main.py
    ```
 
-## Okta tenant setup (ligalac.okta.com) — done
+## Okta tenant setup (ligalac.okta.com)
 
-- [x] **AI Agent object in Universal Directory** ("Monday Briefing Agent"),
-      linked to a front-door OIDC app (`Monday Briefing Agent - Front Door`,
-      created purely to satisfy the registration flow's login-flow
-      requirement — the agent has no real end-user login).
-- [x] **OAuth service app** (`Hackathon - Monday Briefing Agent`,
-      `client_credentials`) for the agent's own backend identity —
-      `OKTA_AGENT_CLIENT_ID`/`SECRET`.
-- [x] **Two custom authorization servers** — `Hackathon HR Resource`
-      (`hr.read`) and `Hackathon Finance Resource` (`finance.read`) — each
-      with an access policy scoped to only the agent's service app.
-      Declared on the AI Agent object as resource connections with
-      **Only Allow** scoped to exactly that one scope each (least privilege).
-      IDs go into `HR_AUTH_SERVER_ID`/`FINANCE_AUTH_SERVER_ID` (agent side)
-      and `OKTA_AUTHORIZATION_SERVER_ID` (each MCP server's own `.env`).
-- [x] **Okta Privileged Access (OPA) vaulted secret** (`HackathonAccountHelper1`,
-      holding both `ticketing-system-demo-key` and `analytics-system-demo-key`)
-      fetched just-in-time via OPA's Reveal a Secret JWE flow — see
-      `briefing-agent/okta_auth.py`. Declared on the AI Agent object as a
-      **Secret** resource connection
-      (`orn:okta:pam:...:secrets:f8b035d0-6f08-48e3-ab5e-f43f38d55ec9`).
-      Falls back to plain env vars for local dev if `OPA_DOMAIN` isn't set.
-- [ ] Stretch, not yet done: wire up a **kill switch** (revoke the agent's
-      OAuth grants) and an **access certification** campaign on the agent's
-      scopes, to demo governance beyond just the initial connection live.
+Fully provisioned: AI Agent object in UD (owned, with a front-door app),
+two custom authorization servers (least-privilege scoped), and an
+OPA-vaulted secret — see `SETUP.md` for the exact steps and every gotcha
+hit while building this, so it's reproducible on a different tenant.
+Not yet done: a live kill-switch / access-certification demo.
 
-## Note on the mock data
+## Demoing this to a customer
 
-The vendored servers model *internal* systems (employee/payroll, expense
-reports & budgets, dev tickets, system health) rather than customer/account
-data — so the narrative is an internal ops briefing for a team lead, not
-customer-account research, even though it lands in the same "Meeting
-Preparation" category.
+See `DEMO_GUIDE.md` for a talk track, anticipated questions, and — just as
+important — an honest list of what this demo does *not* yet prove (the
+backend data is internal-ops, not customer/account data; there's no kill
+switch demo). Don't oversell past that list.
