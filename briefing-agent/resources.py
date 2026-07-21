@@ -5,14 +5,14 @@ RESOURCES = {
     "hr": {
         "label": "HR System (Workday-like)",
         "base_url": "http://localhost:8001",
-        "connection_type": "Authorization server (native XAA)",
+        "connection_type": "Authorization server (OAuth client_credentials)",
         "auth_server_id_env": "HR_AUTH_SERVER_ID",
         "scope": "hr.read",
     },
     "finance": {
         "label": "Finance System (SAP-like)",
         "base_url": "http://localhost:8002",
-        "connection_type": "Authorization server (native XAA)",
+        "connection_type": "Authorization server (OAuth client_credentials)",
         "auth_server_id_env": "FINANCE_AUTH_SERVER_ID",
         "scope": "finance.read",
     },

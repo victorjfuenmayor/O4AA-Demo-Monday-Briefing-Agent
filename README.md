@@ -8,10 +8,17 @@ Patterns deck in a single demo:
 
 | System | Style | O4AA mechanism |
 |---|---|---|
-| HR (Workday-like) | native OAuth | XAA — client_credentials against a custom Okta authorization server |
-| Finance (SAP-like) | native OAuth | XAA — client_credentials against a custom Okta authorization server |
+| HR (Workday-like) | native OAuth | client_credentials against a custom Okta authorization server |
+| Finance (SAP-like) | native OAuth | client_credentials against a custom Okta authorization server |
 | Ticketing (Jira-like) | static API key | Key vaulted in Okta Privileged Access, fetched just-in-time |
 | Analytics (DataDog-like) | static API key | Key vaulted in Okta Privileged Access, fetched just-in-time |
+
+We also fully implemented and tested **real Cross-App Access** (the actual
+ID-JAG/token-exchange protocol, not the client_credentials shortcut above)
+for the HR connection, and traced it down to a genuine platform gap in this
+org rather than a config error on our end — see `SETUP.md` §8 for the full
+investigation. The working code is preserved in `okta_auth.py` but not
+wired into the default flow, since it can't complete end-to-end here.
 
 Category: **Meeting Preparation**. The agent itself is registered as an AI
 Agent object in Okta Universal Directory with a human owner, so the whole
@@ -24,7 +31,9 @@ kill switch — is demoable, not just the four API calls.
 mcp-servers/           four sample backend MCP servers (vendored from
                         oktaforai-okta/sample-mcp-servers), unmodified except
                         for tenant-specific .env values
-briefing-agent/         the agent: calls all four MCPs, narrates the result
+briefing-agent/         main.py (agent + CLI), app.py (Streamlit UI),
+                        auth.py (Okta login), okta_auth.py (O4AA credential
+                        brokering), resources.py (connection registry)
 ```
 
 ## Running locally
@@ -44,7 +53,8 @@ briefing-agent/         the agent: calls all four MCPs, narrates the result
    cd briefing-agent
    pip install -r requirements.txt
    cp .env.example .env   # fill in Okta + Anthropic values
-   python main.py
+   python main.py                 # CLI
+   streamlit run app.py           # or: browser UI, gated behind Okta login
    ```
 
 ## Okta tenant setup (ligalac.okta.com)

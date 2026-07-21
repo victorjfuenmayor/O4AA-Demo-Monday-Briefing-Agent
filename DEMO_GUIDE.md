@@ -16,6 +16,10 @@ declared and governed in Okta."
 ## Before you start
 
 - All four MCP servers running (`SETUP.md` step 6), agent's `.env` filled in.
+- Prefer the Streamlit UI (`streamlit run app.py`, `SETUP.md` §7) over the
+  CLI for anything customer-facing — it's gated behind a real Okta login,
+  which is itself worth narrating (see step 0 below), and looks far better
+  on a shared screen than a terminal.
 - A browser tab open on the AI Agent's page in Okta Universal Directory
   (Directory → the agent) showing its resource connections — you'll want to
   flip to this mid-demo.
@@ -25,7 +29,12 @@ declared and governed in Okta."
 
 ## Live walkthrough
 
-**1. Run `python main.py` in `briefing-agent/` and let the Receipts panel print.**
+**0. (Streamlit only) Log in with Okta before touching the app.**
+
+> "Before I can even use this agent, I have to authenticate as myself
+> through Okta — the agent isn't a standing service anyone can just open."
+
+**1. Click "Generate this week's briefing" (or run `python main.py` for the CLI) and let the Receipts panel render.**
 
 > "Before anything else, here's what just happened under the hood."
 
@@ -78,15 +87,27 @@ Point at each of the four lines:
 - **"Does this work if the backend only has an API key, no OAuth at all?"**
   Yes — that's exactly what Ticketing and Analytics demonstrate. That's the
   more common case in the field, not the exception.
-- **"What's the effort to onboard a new resource?"** For an XAA-native
+- **"What's the effort to onboard a new resource?"** For an OAuth-capable
   resource: one custom auth server + a scope + a policy (~4 API calls). For
   a legacy static-key resource: vault the key in OPA once, grant the
   agent's identity read access. See `SETUP.md`.
 - **"Can this pattern work for [Salesforce / Zendesk / our internal
   system]?"** Yes — swap which backend each connection points at. The O4AA
-  mechanics (XAA for OAuth-capable resources, OPA vaulting for the rest) are
-  identical regardless of what data is on the other end. See "What this
-  demo is NOT" below for the honest caveat on what would need to change.
+  mechanics (client_credentials for OAuth-capable resources, OPA vaulting
+  for the rest) are identical regardless of what data is on the other end.
+  See "What this demo is NOT" below for the honest caveat on what would
+  need to change.
+- **"Is this real Cross-App Access (XAA), with the ID-JAG token exchange?"**
+  Not in what's running today — HR and Finance both use plain OAuth
+  `client_credentials` (app-only, no end-user identity in the token). We
+  did fully implement and test real XAA (the actual
+  `draft-ietf-oauth-identity-assertion-authz-grant` protocol) against this
+  same tenant, and traced it precisely to a missing "XAA Resource App"
+  catalog integration that this org doesn't have — a real platform gap,
+  documented in `SETUP.md` §8, not a shortcut we took. Good material if a
+  technical prospect (or an Okta PM) asks "have you actually tried real
+  XAA" — the honest answer is yes, in detail, and here's exactly where it
+  stops working today.
 
 ## What this demo is NOT
 

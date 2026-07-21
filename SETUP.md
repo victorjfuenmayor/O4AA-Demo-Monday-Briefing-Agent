@@ -191,3 +191,85 @@ which one and the traceback tells you why — it's a short pipeline.
 mentioning `LiteLLM_VerificationTokenTable`, the Anthropic key you were
 given is scoped to an internal proxy, not `api.anthropic.com` directly — get
 a direct key or the proxy's base URL (`ANTHROPIC_BASE_URL`).
+
+## 7. Streamlit front end with Okta login
+
+`briefing-agent/app.py` (`streamlit run app.py`) is a browser UI over the
+same `main.py` pipeline, gated behind a real Okta login (Authorization
+Code flow) rather than the CLI's no-user mode.
+
+- Reuses the front-door app from step 5 as the login client
+  (`OKTA_LOGIN_CLIENT_ID`/`SECRET`/`OKTA_LOGIN_REDIRECT_URI` in `.env`, e.g.
+  `http://localhost:8501`) — add that redirect URI to the app's
+  `redirect_uris`.
+- **Gotcha:** `st.link_button` always opens `target="_blank"` with no way
+  to override it, which breaks a redirect-back-to-the-same-tab OAuth flow.
+  Use a plain `<a target="_self">` via `st.markdown(..., unsafe_allow_html=True)`
+  instead.
+- **Gotcha:** `st.session_state` doesn't reliably survive a full external
+  redirect (the browser fully leaves the page for Okta and back) — the
+  OAuth `state` value needs to live in a plain module-level variable
+  instead (see `auth.py`'s `_pending_state`). Fine for a single-user local
+  demo; not a substitute for real server-side session storage.
+
+## 8. Real Cross-App Access (XAA) — investigated, not completed
+
+We attempted to replace HR's plain `client_credentials` connection with
+real XAA (the actual `draft-ietf-oauth-identity-assertion-authz-grant`
+protocol: token-exchange for an ID-JAG, then jwt-bearer to redeem it) rather
+than the client_credentials shortcut both HR and Finance use today. Full
+write-up of what we found, in order:
+
+1. **Wrong app type is rejected outright.** A generic OIDC app's client_id
+   requesting `requested_token_type=urn:ietf:params:oauth:token-type:id-jag`
+   gets `'requested_token_type' is invalid or not supported`. Okta requires
+   the special catalog integration key `test-cwo-app` ("Cross-App Access
+   (XAA) Sample Requesting App") as the requesting-app client. Instantiate
+   one via `POST /api/v1/apps {"name": "test-cwo-app", ...}` if your org
+   already has a sample of it installed (ours did, apparently provisioned
+   for earlier XAA testing — check `GET /api/v1/apps` for a label like
+   "Agent0 - Cross App Access (XAA) Sample Requesting App").
+2. **That app type can't use a custom authorization server for its own
+   login**, even one literally named "default" — `error=unauthorized_client,
+   This client cannot use a custom authorization server`. Its login (and,
+   per Okta's own blog, the ID-JAG token-exchange call itself) must go
+   through the **org authorization server** (`/oauth2/v1/...`, no auth
+   server ID segment) — see `developer.okta.com/blog/2026/02/17/xaa-resource-app`:
+   *"Only the org authorization server can be used to exchange ID-JAG
+   tokens."* We were calling `/oauth2/default/v1/token` (a custom AS
+   despite the name) for the exchange — a real bug, not a config gap.
+3. **The subject_token's issuing app matters.** An id_token issued to an
+   unrelated login app fails with `'subject_token' is invalid` even once
+   the endpoint is correct. The user must log in *through the same
+   `test-cwo-app`-type app* that performs the exchange, so the token's
+   `aud` matches. (We confirmed this both ways: swapping the login app
+   back to a generic OIDC app reproduces the failure immediately.)
+4. **The user must be assigned to that app.** Zero assignments by default
+   → same `'subject_token' is invalid'` error. `POST
+   /api/v1/apps/{id}/users/{userId}` fixes it.
+5. **Client auth method (Basic vs. body) didn't matter** — Okta's own
+   reference client (`oktadev/okta-cross-app-access-mcp`,
+   `packages/id-assert-authz-grant-client`) sends `client_id`/`client_secret`
+   in the form body; we tried both, no difference in outcome, but matching
+   the reference client is still the safer default.
+6. **Real blocker: no resource-app registration for HR.** Once 1–4 are
+   fixed, the org-AS token-exchange succeeds (mints a real ID-JAG!), but
+   redeeming it fails: `invalid_target: The resource app is not completely
+   configured or user is not assigned to the app`. Per Okta's blog, this
+   needs a **second** catalog integration — "XAA Resource App" — installed
+   *for the resource* (HR), with its own Issuer URL pointing at HR's
+   authorization server, plus an explicit **Manage Connections** link from
+   the requesting app ("Apps providing consent" → add the resource app).
+   **This catalog integration does not exist in `ligalac.okta.com`'s app
+   catalog** (searched both the installed-apps list and the OIN catalog
+   search API for "XAA", "cross app access", "resource" — nothing). Per
+   Okta's own developer blog, XAA is EA and "no longer self-service" — full
+   resource-app support looks like it requires Okta to provision it for a
+   given org (contact `xaa@okta.com`), which is outside console/API
+   self-service.
+
+**Where the code stands:** `okta_auth.py`'s `get_xaa_token_for_user()` /
+`_get_id_jag()` are a complete, correct implementation of steps 1–5 above —
+left in the file, unused by `main.py`, as a working reference for whenever
+the resource-app catalog integration becomes available. `main.py` uses
+`get_client_credentials_token()` for both HR and Finance today.
