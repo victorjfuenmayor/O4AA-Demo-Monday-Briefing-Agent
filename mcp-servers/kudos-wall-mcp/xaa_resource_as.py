@@ -61,7 +61,7 @@ def _verify_id_jag(id_jag: str) -> dict:
     """Verifies the ID-JAG was signed by Okta's org authorization server,
     scoped to our issuer, and not expired. Returns its claims.
 
-    Uses OKTA_ORG_DOMAIN (Okta's real domain, e.g. ligalac.okta.com) --
+    Uses OKTA_ORG_DOMAIN (Okta's real domain, e.g. dev-12345.okta.com) --
     deliberately distinct from OKTA_DOMAIN, which auth/okta_validator.py
     reads to discover *our own* issuer for validating the tokens we
     ourselves mint below. Same env var name, two different authorization

@@ -396,9 +396,9 @@ Veja `SETUP.md` §9 para o passo a passo completo de ambos.
         "pt-BR": "Dados brutos obtidos de cada sistema",
     },
     "click_button_info": {
-        "en": "Click the button to run the agent live against ligalac.okta.com.",
-        "es": "Haz clic en el botón para ejecutar el agente en vivo contra ligalac.okta.com.",
-        "pt-BR": "Clique no botão para executar o agente em tempo real contra ligalac.okta.com.",
+        "en": "Click the button to run the agent live against your Okta tenant.",
+        "es": "Haz clic en el botón para ejecutar el agente en vivo contra tu tenant de Okta.",
+        "pt-BR": "Clique no botão para executar o agente em tempo real contra o seu tenant do Okta.",
     },
     "sidebar_trace_subheader": {
         "en": "🔍 Live Okta ↔ MCP trace",

@@ -95,7 +95,7 @@ briefing-agent/         main.py (agent + CLI), app.py (Streamlit UI),
    streamlit run app.py           # or: browser UI, gated behind Okta login
    ```
 
-## Okta tenant setup (ligalac.okta.com)
+## Okta tenant setup
 
 Fully provisioned: AI Agent object in UD (owned, with a linked front-door
 app and its own signing key pair), a Resource Server + STS connection for

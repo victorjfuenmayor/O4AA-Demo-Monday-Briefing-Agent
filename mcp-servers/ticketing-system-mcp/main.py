@@ -427,9 +427,11 @@ if __name__ == "__main__":
             registration auto-discover which authorization server protects
             this resource."""
             from starlette.responses import JSONResponse
+            okta_domain = os.getenv("OKTA_DOMAIN", "").strip()
+            auth_server_id = os.getenv("OKTA_AUTHORIZATION_SERVER_ID", "").strip()
             return JSONResponse({
                 "resource": str(request.base_url).rstrip("/"),
-                "authorization_servers": ["https://ligalac.okta.com/oauth2/aus15h0iuaowZH8zD698"],
+                "authorization_servers": [f"https://{okta_domain}/oauth2/{auth_server_id}"],
             })
 
         app.routes.append(Route("/.well-known/oauth-protected-resource", protected_resource_metadata, methods=["GET"]))

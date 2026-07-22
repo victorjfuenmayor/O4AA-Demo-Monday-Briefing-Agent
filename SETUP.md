@@ -2,7 +2,7 @@
 
 This walks through everything needed to reproduce the Monday Briefing Agent
 demo on a different tenant, including every gotcha hit while building it on
-`ligalac.okta.com`. Steps 1–4 use the core Identity Management API
+our own tenant. Steps 1–4 use the core Identity Management API
 (`https://{org}.okta.com/api/v1/...`, `Authorization: SSWS {token}`). Step 5
 uses the *separate* Okta Privileged Access API
 (`https://{org}.pam.okta.com/v1/teams/{team}/...`) — different product,
@@ -286,7 +286,7 @@ write-up of what we found, in order:
    the resource* (HR), with its own Issuer URL pointing at HR's
    authorization server, plus an explicit **Manage Connections** link from
    the requesting app ("Apps providing consent" → add the resource app).
-   **This catalog integration does not exist in `ligalac.okta.com`'s app
+   **This catalog integration does not exist in our tenant's app
    catalog.** We confirmed this two ways: the OIN catalog search API
    returns nothing for "XAA"/"cross app access"/"resource"/"cwo"/"todo0",
    *and* it returns nothing even for `test-cwo-app`'s own exact key
@@ -603,7 +603,7 @@ small sequence diagram (generated fresh via the Lucid MCP integration —
 integration. That conclusion was wrong. **Agent0 — Cross App Access (XAA)
 Sample Requesting App** and **Todo0 — Cross App Access (XAA) Sample
 Resource App** — Okta's own official XAA demo pair — were already
-installed and linked (Manage Connections) on `ligalac.okta.com`. Nobody
+installed and linked (Manage Connections) on our tenant. Nobody
 had ever gone looking at the Applications list for them; the catalog
 *search* API genuinely doesn't index these entries (confirmed in §8), but
 that only means you can't find them by searching to *install* them — it
