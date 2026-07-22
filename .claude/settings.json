@@ -7,7 +7,16 @@
       "Bash(curl -sL https://raw.githubusercontent.com/oktaforai-okta/sample-mcp-servers/main/hr-system-mcp/README.md)",
       "Bash(curl -sL https://raw.githubusercontent.com/oktaforai-okta/sample-mcp-servers/main/hr-system-mcp/env.example)",
       "Bash(gh api *)",
-      "Bash(rtk ls *)"
+      "Bash(rtk ls *)",
+      "Bash(ngrok http *)",
+      "Bash(curl -s http://localhost:4040/api/tunnels)",
+      "Bash(python3 -m json.tool)",
+      "mcp__lucid__lucid-lucid_create_sequence_diagram",
+      "Bash(.venv/bin/python3 -c ' *)",
+      "Bash(\".venv/bin/python3\" -m py_compile mcp-servers/kudos-wall-mcp/main.py mcp-servers/kudos-wall-mcp/xaa_resource_as.py mcp-servers/kudos-wall-mcp/auth/okta_validator.py)",
+      "Bash(\".venv/bin/python3\" -m py_compile briefing-agent/okta_auth.py mcp-servers/kudos-wall-mcp/main.py mcp-servers/kudos-wall-mcp/xaa_resource_as.py)",
+      "Bash(python3 -m py_compile main.py resources.py okta_auth.py)",
+      "Bash(python3 -m py_compile app.py main.py resources.py okta_auth.py)"
     ]
   }
 }

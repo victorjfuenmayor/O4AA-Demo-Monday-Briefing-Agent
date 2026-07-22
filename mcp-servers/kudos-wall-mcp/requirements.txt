@@ -1,6 +1,6 @@
 fastmcp==3.0.0b1
-python-dateutil>=2.8.2
 uvicorn>=0.27.0
 httpx>=0.24.0
 pyjwt>=2.6.0
+jwcrypto>=1.5
 python-dotenv>=0.21.0

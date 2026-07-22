@@ -3,8 +3,12 @@ Ticketing System MCP Server (Jira-like)
 Provides tools for creating tickets, adding comments, and transitioning status.
 """
 
+import os
 from fastmcp import FastMCP
 from datetime import datetime
+
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 mcp = FastMCP("Ticketing System")
 
@@ -213,18 +217,21 @@ if __name__ == "__main__":
     
     if len(sys.argv) > 1 and sys.argv[1] == "--http":
         port = int(sys.argv[2]) if len(sys.argv) > 2 else 8004
-        
+
         import uvicorn
         from starlette.applications import Starlette
         from starlette.responses import StreamingResponse
         from starlette.routing import Route
         from starlette.requests import Request
         import json
-        
+
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from auth.okta_validator import validate_authorization_header
+
         print(f"Starting Ticketing System MCP server on http://localhost:{port}/mcp")
-        
+
         app = Starlette()
-        
+
         async def mcp_handler(request: Request):
             """HTTP endpoint for MCP protocol using StreamableHttpTransport."""
             try:
@@ -245,6 +252,8 @@ if __name__ == "__main__":
                 print(f"[MCP DEBUG] Mcp-Session-Id header: {session_id_header}")
                 print(f"[MCP DEBUG] mcp-session-id header (lowercase): {session_id_lower}")
                 print(f"[MCP DEBUG] Request Body: {request_text[:300]}")
+
+                auth_header = request.headers.get("Authorization")
                 
                 async def generate_responses():
                     try:
@@ -308,10 +317,23 @@ if __name__ == "__main__":
                                 }
                                 print(f"[MCP DEBUG] → Responding to tools/list with 2 tools")
                             elif message.get("method") == "tools/call":
+                                token_claims = await validate_authorization_header(auth_header)
+                                if not token_claims:
+                                    response = {
+                                        "jsonrpc": "2.0",
+                                        "id": request_id,
+                                        "error": {
+                                            "code": -32001,
+                                            "message": "Unauthorized - Invalid or missing Okta token"
+                                        }
+                                    }
+                                    yield json.dumps(response).encode() + b'\n'
+                                    continue
+
                                 tool_name = message.get("params", {}).get("name")
                                 tool_args = message.get("params", {}).get("arguments", {})
                                 print(f"[MCP DEBUG] → Calling tool: {tool_name} with args: {tool_args}")
-                                
+
                                 try:
                                     if tool_name == "get_ticket":
                                         result = get_ticket(tool_args.get("ticket_id"))
@@ -400,6 +422,17 @@ if __name__ == "__main__":
                     media_type="application/x-ndjson"
                 )
         
+        async def protected_resource_metadata(request: Request):
+            """RFC 9728 discovery endpoint -- lets Okta's MCP Server
+            registration auto-discover which authorization server protects
+            this resource."""
+            from starlette.responses import JSONResponse
+            return JSONResponse({
+                "resource": str(request.base_url).rstrip("/"),
+                "authorization_servers": ["https://ligalac.okta.com/oauth2/aus15h0iuaowZH8zD698"],
+            })
+
+        app.routes.append(Route("/.well-known/oauth-protected-resource", protected_resource_metadata, methods=["GET"]))
         app.routes.append(Route("/mcp", mcp_handler, methods=["POST"]))
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
     else:

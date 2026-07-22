@@ -4,7 +4,8 @@ answers tools/call with {"result": {"content": [{"type": "text", "text": "<json>
 
 import itertools
 import json
-import httpx
+
+from call_log import logged_post
 
 _ids = itertools.count(1)
 
@@ -27,7 +28,13 @@ class MCPClient:
             "method": "tools/call",
             "params": {"name": name, "arguments": arguments or {}},
         }
-        resp = httpx.post(self.base_url, json=payload, headers=self._headers(), timeout=15)
+        resp = logged_post(
+            f"MCP server ({self.base_url}) — tools/call {name}",
+            self.base_url,
+            json=payload,
+            headers=self._headers(),
+            timeout=15,
+        )
         resp.raise_for_status()
         body = resp.json()
         if "error" in body:
