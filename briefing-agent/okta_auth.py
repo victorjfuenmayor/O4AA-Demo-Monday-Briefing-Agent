@@ -15,13 +15,17 @@ Two O4AA resource-connection types currently in use, one function each:
 
 get_xaa_token_for_user() below is a complete, correct implementation of
 real Cross-App Access (draft-ietf-oauth-identity-assertion-authz-grant) --
-not wired into main.py's default flow. It works up through minting the
-ID-JAG; redeeming it fails with "The resource app is not completely
-configured" because this org's catalog lacks the "XAA Resource App"
-integration needed to register HR as a proper XAA resource (confirmed via
+not wired into main.py's default flow. Minting the ID-JAG itself fails with
+"invalid_target: The resource app is not completely configured" because
+this org's catalog lacks the "XAA Resource App" integration needed to
+register HR as a proper XAA resource (confirmed via
 developer.okta.com/blog/2026/02/17/xaa-resource-app) -- a genuine platform
-gap, not a bug here. See SETUP.md for the full investigation. Revisit if
-that catalog integration becomes available on this org.
+gap, not a bug here. Confirmed with a controlled test: a generic OIDC app
+given the token-exchange grant type, hitting the correct org authorization
+server, still gets rejected for requesting an id-jag token type -- the
+special "test-cwo-app" catalog client type is a hard requirement, not
+incidental. See SETUP.md for the full investigation. Revisit if the
+resource-app catalog integration becomes available on this org.
 """
 
 import json

@@ -252,21 +252,58 @@ write-up of what we found, in order:
    `packages/id-assert-authz-grant-client`) sends `client_id`/`client_secret`
    in the form body; we tried both, no difference in outcome, but matching
    the reference client is still the safer default.
-6. **Real blocker: no resource-app registration for HR.** Once 1–4 are
-   fixed, the org-AS token-exchange succeeds (mints a real ID-JAG!), but
-   redeeming it fails: `invalid_target: The resource app is not completely
-   configured or user is not assigned to the app`. Per Okta's blog, this
-   needs a **second** catalog integration — "XAA Resource App" — installed
-   *for the resource* (HR), with its own Issuer URL pointing at HR's
+6. **Real blocker: no resource-app registration for HR — and it fails at
+   *minting*, not redemption.** Once 1–4 are fixed, the very first call —
+   the org-AS token-exchange requesting the ID-JAG — fails with
+   `invalid_target: The resource app is not completely configured or user
+   is not assigned to the app`. (We initially misread this as a later
+   redemption-step failure; it's not — `_get_id_jag()` itself never
+   succeeds against this `audience`.) This means Okta's org authorization
+   server validates the `audience` parameter against a registry of known
+   resource apps *before it will even issue an ID-JAG* — you can't get a
+   valid ID-JAG scoped to an unregistered resource under any circumstance,
+   which also rules out having the resource self-validate the ID-JAG
+   directly (skipping a separate redemption call): the token doesn't exist
+   to validate in the first place. Per Okta's blog, fixing this needs a
+   **second** catalog integration — "XAA Resource App" — installed *for
+   the resource* (HR), with its own Issuer URL pointing at HR's
    authorization server, plus an explicit **Manage Connections** link from
    the requesting app ("Apps providing consent" → add the resource app).
    **This catalog integration does not exist in `ligalac.okta.com`'s app
-   catalog** (searched both the installed-apps list and the OIN catalog
-   search API for "XAA", "cross app access", "resource" — nothing). Per
-   Okta's own developer blog, XAA is EA and "no longer self-service" — full
-   resource-app support looks like it requires Okta to provision it for a
-   given org (contact `xaa@okta.com`), which is outside console/API
-   self-service.
+   catalog.** We confirmed this two ways: the OIN catalog search API
+   returns nothing for "XAA"/"cross app access"/"resource"/"cwo"/"todo0",
+   *and* it returns nothing even for `test-cwo-app`'s own exact key
+   despite that app being directly installable — meaning these internal
+   catalog entries aren't indexed by search at all, so the only way to
+   find a hidden key is to already know it (e.g. from Okta support/docs),
+   not by searching. Per Okta's developer blog, XAA is EA and "no longer
+   self-service" — full resource-app support looks like it requires Okta
+   to provision it for a given org (contact `xaa@okta.com`), outside
+   console/API self-service.
+7. **Confirmed the app-type requirement is real, not incidental**, with a
+   controlled test: took a generic OIDC app (already granted the
+   `token-exchange` grant type, already hitting the correct org-AS
+   endpoint) and used it for both login and the exchange call. Got the
+   exact original error back — `'requested_token_type' is invalid or not
+   supported'` — proving Okta rejects generic OIDC clients for
+   `requested_token_type=id-jag` specifically, independent of grant-type
+   config or endpoint choice. Only the special `test-cwo-app` catalog type
+   is accepted as a requester.
+8. **`atko-cross-app-access-sdk` (npm, MIT, beta)** is a real published
+   JS/TS SDK for the requester side (`exchangeIdTokenForIdJag`,
+   `verifyIdJagToken`) — confirms the org-AS endpoint choice from point 2,
+   and its `verifyIdJagToken` implies resources can self-validate an
+   ID-JAG's signature/claims instead of redeeming it for a separate access
+   token. Doesn't change the point-6 conclusion, since minting itself is
+   blocked. `xaa.dev/docs` documents an equivalent "Own Auth Server"
+   pattern for resource-app developers (matching the self-hosted
+   `oidc-provider`-based authorization server in
+   `oktadev/okta-cross-app-access-mcp`'s `packages/authorization-server`)
+   — worth exploring if you need a resource-side implementation
+   independent of Okta's native (currently unavailable-here) resource-app
+   registration, but note it's documentation we couldn't fully load
+   (JS-rendered site), and it doesn't remove the need for Okta to
+   recognize *some* registered audience before minting an ID-JAG at all.
 
 **Where the code stands:** `okta_auth.py`'s `get_xaa_token_for_user()` /
 `_get_id_jag()` are a complete, correct implementation of steps 1–5 above —
