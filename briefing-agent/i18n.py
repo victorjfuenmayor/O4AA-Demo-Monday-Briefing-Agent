@@ -70,6 +70,11 @@ TEXT = {
         "es": "Error de inicio de sesión: el parámetro state no coincide. Intenta iniciar sesión de nuevo.",
         "pt-BR": "Falha no login: incompatibilidade de state. Tente fazer login novamente.",
     },
+    "session_expired_message": {
+        "en": "Your Okta session ended (e.g. a logout elsewhere) — please log in again.",
+        "es": "Tu sesión de Okta terminó (por ejemplo, un cierre de sesión en otro lugar) — inicia sesión de nuevo.",
+        "pt-BR": "Sua sessão do Okta terminou (por exemplo, um logout em outro lugar) — faça login novamente.",
+    },
     "signed_in_as": {
         "en": "Signed in as **{name}**",
         "es": "Sesión iniciada como **{name}**",
@@ -218,6 +223,21 @@ Veja `SETUP.md` §9 para o passo a passo completo de ambos.
         "es": "Reducir diagrama",
         "pt-BR": "Reduzir diagrama",
     },
+    "token_ttl_valid": {
+        "en": "🕐 Current token valid for **{minutes} more minutes** (expires at {time})",
+        "es": "🕐 El token actual es válido por **{minutes} minutos más** (expira a las {time})",
+        "pt-BR": "🕐 O token atual é válido por **mais {minutes} minutos** (expira às {time})",
+    },
+    "token_ttl_no_fixed": {
+        "en": "No fixed expiry — this mechanism uses a long-lived static key, unlike every OAuth-based resource here.",
+        "es": "Sin vencimiento fijo — este mecanismo usa una clave estática de larga duración, a diferencia de todos los recursos basados en OAuth aquí.",
+        "pt-BR": "Sem expiração fixa — este mecanismo usa uma chave estática de longa duração, diferente de todos os recursos baseados em OAuth aqui.",
+    },
+    "token_ttl_not_yet": {
+        "en": "Generate a briefing with this resource selected to see its live token expiry here.",
+        "es": "Genera un resumen con este sistema seleccionado para ver aquí el vencimiento real de su token.",
+        "pt-BR": "Gere um resumo com este sistema selecionado para ver aqui a expiração real do seu token.",
+    },
     "generate_button": {
         "en": "Generate this week's briefing",
         "es": "Generar el resumen de esta semana",
@@ -357,28 +377,46 @@ Veja `SETUP.md` §9 para o passo a passo completo de ambos.
         "en": (
             "The link below opens Okta's consent screen in a **new tab** on purpose — it redirects "
             "to an Okta-owned page, not back into this app, so opening it here would log you out of "
-            "this session. Approve access there, **close that tab**, then come back to **this tab** "
-            "and click \"Generate this week's briefing\" again."
+            "this session. Approve access there, then just switch back to **this tab** — it's "
+            "already checking in the background and will continue automatically the moment access "
+            "is granted, no need to click anything else here."
         ),
         "es": (
             "El enlace de abajo abre la pantalla de consentimiento de Okta en una **pestaña "
             "nueva** a propósito — redirige a una página propiedad de Okta, no de vuelta a esta "
-            "app, así que abrirlo aquí cerraría tu sesión. Aprueba el acceso ahí, **cierra esa "
-            "pestaña**, y luego vuelve a **esta pestaña** y haz clic de nuevo en \"Generar el "
-            "resumen de esta semana\"."
+            "app, así que abrirlo aquí cerraría tu sesión. Aprueba el acceso ahí y luego simplemente "
+            "vuelve a **esta pestaña** — ya está verificando en segundo plano y continuará "
+            "automáticamente en el momento en que se otorgue el acceso, sin necesidad de hacer clic "
+            "en nada más aquí."
         ),
         "pt-BR": (
             "O link abaixo abre a tela de consentimento do Okta em uma **nova aba** de "
             "propósito — ele redireciona para uma página do próprio Okta, não de volta para "
-            "este app, então abri-lo aqui encerraria sua sessão. Aprove o acesso lá, **feche "
-            "essa aba**, depois volte para **esta aba** e clique novamente em \"Gerar o resumo "
-            "desta semana\"."
+            "este app, então abri-lo aqui encerraria sua sessão. Aprove o acesso lá e depois "
+            "apenas volte para **esta aba** — ela já está verificando em segundo plano e vai "
+            "continuar automaticamente no momento em que o acesso for concedido, sem precisar "
+            "clicar em mais nada aqui."
         ),
     },
     "grant_access_link": {
         "en": "Grant access",
         "es": "Otorgar acceso",
         "pt-BR": "Conceder acesso",
+    },
+    "consent_dialog_title": {
+        "en": "Waiting for access approval",
+        "es": "Esperando aprobación de acceso",
+        "pt-BR": "Aguardando aprovação de acesso",
+    },
+    "consent_waiting_status": {
+        "en": "Waiting for you to approve access to **{resource}**... checking again in a moment.",
+        "es": "Esperando que apruebes el acceso a **{resource}**... verificando de nuevo en un momento.",
+        "pt-BR": "Aguardando você aprovar o acesso a **{resource}**... verificando novamente em um instante.",
+    },
+    "consent_timeout_fallback": {
+        "en": "Still waiting — once you've approved access, click \"Generate this week's briefing\" again.",
+        "es": "Seguimos esperando — una vez que hayas aprobado el acceso, haz clic de nuevo en \"Generar el resumen de esta semana\".",
+        "pt-BR": "Ainda aguardando — depois que você aprovar o acesso, clique novamente em \"Gerar o resumo desta semana\".",
     },
     "narrating_spinner": {
         "en": "Narrating...",
@@ -446,6 +484,11 @@ Veja `SETUP.md` §9 para o passo a passo completo de ambos.
         "en": "**Response — {status}**",
         "es": "**Respuesta — {status}**",
         "pt-BR": "**Resposta — {status}**",
+    },
+    "trace_response_empty": {
+        "en": "(no body)",
+        "es": "(sin contenido)",
+        "pt-BR": "(sem conteúdo)",
     },
 }
 

@@ -13,13 +13,13 @@ from dotenv import load_dotenv
 from anthropic import Anthropic
 
 from mcp_client import MCPClient
-from okta_auth import ConsentRequired, get_client_credentials_token, get_sts_token_for_user, get_vaulted_secret, get_xaa_token_for_user
+from okta_auth import ConsentRequired, get_client_credentials_token, get_sts_token_for_user, get_vaulted_secret, get_xaa_token_for_user, token_expiry_ts
 from resources import RESOURCES
 
 load_dotenv()
 
 
-def hr_client(receipts: list, subject_id_token: str | None) -> MCPClient:
+def hr_client(receipts: list, token_expiry: dict, subject_id_token: str | None) -> MCPClient:
     r = RESOURCES["hr"]
     if subject_id_token:
         try:
@@ -33,17 +33,19 @@ def hr_client(receipts: list, subject_id_token: str | None) -> MCPClient:
         # so fall back to the agent's own app-only credentials.
         token = get_client_credentials_token(os.environ[r["auth_server_id_env"]], r["scope"])
         receipts.append((r["label"], r["connection_type"], "OAuth access token (client_credentials fallback, no logged-in user) — app-only, no user context"))
+    token_expiry["hr"] = token_expiry_ts(token)
     return MCPClient(r["base_url"], auth_header=("Authorization", f"Bearer {token}"))
 
 
-def finance_client(receipts: list) -> MCPClient:
+def finance_client(receipts: list, token_expiry: dict) -> MCPClient:
     r = RESOURCES["finance"]
     token = get_client_credentials_token(os.environ[r["auth_server_id_env"]], r["scope"])
     receipts.append((r["label"], r["connection_type"], "OAuth access token (client_credentials via Okta custom auth server) — app-only, no user context"))
+    token_expiry["finance"] = token_expiry_ts(token)
     return MCPClient(r["base_url"], auth_header=("Authorization", f"Bearer {token}"))
 
 
-def ticketing_client(receipts: list, subject_id_token: str | None) -> MCPClient | None:
+def ticketing_client(receipts: list, token_expiry: dict, subject_id_token: str | None) -> MCPClient | None:
     r = RESOURCES["ticketing"]
     if not subject_id_token:
         # This resource's authorization server only allows authorization_code
@@ -56,17 +58,19 @@ def ticketing_client(receipts: list, subject_id_token: str | None) -> MCPClient 
         e.resource_label, e.connection_type = r["label"], r["connection_type"]
         raise
     receipts.append((r["label"], r["connection_type"], "AI Agent token exchange (private_key_jwt) on behalf of the logged-in user — real chain of custody (agent + user identity, both in the token)"))
+    token_expiry["ticketing"] = token_expiry_ts(token)
     return MCPClient(r["base_url"], auth_header=("Authorization", f"Bearer {token}"))
 
 
-def analytics_client(receipts: list) -> MCPClient:
+def analytics_client(receipts: list, token_expiry: dict) -> MCPClient:
     r = RESOURCES["analytics"]
     key = get_vaulted_secret(r["env_fallback"], r["opa_key"])
     receipts.append((r["label"], r["connection_type"], "X-API-Key fetched just-in-time from vault"))
+    token_expiry["analytics"] = token_expiry_ts(key)  # always None -- not a JWT, no built-in expiry
     return MCPClient(r["base_url"], auth_header=("X-API-Key", key))
 
 
-def kudos_client(receipts: list, agent0_id_token: str | None) -> MCPClient | None:
+def kudos_client(receipts: list, token_expiry: dict, agent0_id_token: str | None) -> MCPClient | None:
     r = RESOURCES["kudos"]
     if not agent0_id_token:
         # Real XAA needs a subject_token whose `aud` is Agent0 specifically
@@ -77,6 +81,7 @@ def kudos_client(receipts: list, agent0_id_token: str | None) -> MCPClient | Non
     issuer_url = os.environ[r["resource_issuer_url_env"]]
     token = get_xaa_token_for_user(issuer_url, r["scope"], agent0_id_token)
     receipts.append((r["label"], r["connection_type"], "Real Cross-App Access: ID-JAG minted by Okta's org authorization server, redeemed via jwt-bearer at the resource's own self-hosted authorization server — admin-defined access, no per-user consent prompt"))
+    token_expiry["kudos"] = token_expiry_ts(token)
     return MCPClient(r["base_url"], auth_header=("Authorization", f"Bearer {token}"))
 
 
@@ -91,16 +96,17 @@ def gather_briefing_data(
     subject_id_token: str | None = None,
     agent0_id_token: str | None = None,
     selected: set[str] | None = None,
-) -> tuple[dict, list]:
+) -> tuple[dict, list, dict]:
     if selected is None:
         selected = DEFAULT_RESOURCE_KEYS
 
     receipts = []
-    hr = hr_client(receipts, subject_id_token) if "hr" in selected else None
-    ticketing = ticketing_client(receipts, subject_id_token) if "ticketing" in selected else None
-    finance = finance_client(receipts) if "finance" in selected else None
-    analytics = analytics_client(receipts) if "analytics" in selected else None
-    kudos = kudos_client(receipts, agent0_id_token) if "kudos" in selected else None
+    token_expiry = {}
+    hr = hr_client(receipts, token_expiry, subject_id_token) if "hr" in selected else None
+    ticketing = ticketing_client(receipts, token_expiry, subject_id_token) if "ticketing" in selected else None
+    finance = finance_client(receipts, token_expiry) if "finance" in selected else None
+    analytics = analytics_client(receipts, token_expiry) if "analytics" in selected else None
+    kudos = kudos_client(receipts, token_expiry, agent0_id_token) if "kudos" in selected else None
 
     data = {}
     if hr:
@@ -116,7 +122,7 @@ def gather_briefing_data(
         data["backlog_tickets"] = ticketing.call_tool("list_tickets", {"status": "Backlog"})
     if kudos:
         data["team_shoutouts"] = kudos.call_tool("list_kudos")
-    return data, receipts
+    return data, receipts, token_expiry
 
 
 def print_receipts(receipts: list):
@@ -151,7 +157,7 @@ def narrate(data: dict, lang: str = "en") -> str:
 
 
 if __name__ == "__main__":
-    data, receipts = gather_briefing_data()
+    data, receipts, token_expiry = gather_briefing_data()
     print_receipts(receipts)
     print("\n--- Monday Briefing ---\n")
     print(narrate(data))

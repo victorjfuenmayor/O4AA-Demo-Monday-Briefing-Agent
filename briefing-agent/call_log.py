@@ -31,9 +31,12 @@ def get_log() -> list[dict]:
     return _log
 
 
-def _decode_jwt_claims(token: str) -> dict | None:
+def decode_jwt_claims(token: str) -> dict | None:
     """Best-effort, UNVERIFIED decode of a JWT's payload segment, purely
-    for human-readable display in the trace panel."""
+    for human-readable display in the trace panel (and, via
+    okta_auth.token_expiry_ts, the Details popover's token-TTL readout).
+    Not a substitute for real signature verification, which happens
+    separately wherever a token is actually consumed."""
     try:
         parts = token.split(".")
         if len(parts) != 3:
@@ -49,12 +52,19 @@ def _redact_value(key: str, value):
         return value
     if key in _REDACT_KEYS:
         return "***REDACTED***"
+    if key == "authorization" and value.lower().startswith("ssws "):
+        # Okta's own admin-API auth scheme (org SSWS token) -- opaque, not
+        # a JWT, so there are no claims to decode; unlike Bearer below,
+        # fully redact rather than partially showing it. This is the one
+        # credential in the whole app with org-wide admin scope, so it
+        # gets the strictest treatment.
+        return "***REDACTED***"
     if key in _TOKEN_KEYS or (key == "authorization" and value.lower().startswith("bearer ")):
         prefix = "Bearer " if key == "authorization" else ""
         raw = value[len(prefix):] if prefix else value
         shortened = f"{raw[:16]}...{raw[-8:]}" if len(raw) > 30 else raw
         entry = {"value": prefix + shortened}
-        claims = _decode_jwt_claims(raw)
+        claims = decode_jwt_claims(raw)
         if claims:
             entry["decoded_claims"] = claims
         return entry

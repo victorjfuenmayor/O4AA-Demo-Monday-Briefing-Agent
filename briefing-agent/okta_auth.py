@@ -37,6 +37,21 @@ Four O4AA resource-connection mechanisms, one function each:
   re-encrypts the secret with it, client decrypts locally) rather than
   living in agent config. No user identity involved here either, so no
   consent prompt. Used for analytics-system-mcp.
+
+One extra utility, not an O4AA pattern itself:
+
+- token_expiry_ts(): decodes a token's `exp` claim for the UI's live TTL
+  readout (None for Analytics' non-JWT API key).
+
+(A revoke_front_door_consent() helper briefly lived here as a dev/test
+convenience for re-triggering ConsentRequired on demand, but was removed:
+confirmed live via the Grants API that this AI Agent STS consent isn't
+tracked as a classic OAuth grant at all -- GET /api/v1/users/{id}/grants
+returned zero grants regardless of client, so there was nothing to
+revoke. Also checked Okta's End User Settings self-service page and the
+AI Agent's own Admin Console object -- neither exposes this consent
+state today. If Okta ships a real API/UI for this later, re-add it
+there.)
 """
 
 import json
@@ -47,7 +62,7 @@ import httpx
 from jwcrypto import jwe, jwk
 from jwcrypto import jwt as jwcrypto_jwt
 
-from call_log import logged_post
+from call_log import decode_jwt_claims, logged_post
 
 
 class ConsentRequired(Exception):
@@ -64,9 +79,37 @@ class ConsentRequired(Exception):
         super().__init__(f"User consent required for {resource_label or 'resource'}: {interaction_uri}")
 
 
+class SessionExpired(Exception):
+    """Raised when Okta rejects the cached id_token as a subject_token --
+    e.g. the user force-logged-out from Okta's own end-user dashboard
+    independently of this app, which has no way to know that happened
+    except by having its next token-exchange call fail. Our app's own
+    login cache (auth.save_user/get_saved_user) has no expiry check of
+    its own -- it just trusts a cached user indefinitely -- so this is
+    the only signal available that the underlying Okta session is gone.
+    The UI should treat this as "not actually logged in" and route back
+    to the login screen, not show a raw HTTP error."""
+
+
 def _raise_with_body(resp: httpx.Response):
     if resp.is_error:
         raise httpx.HTTPStatusError(f"{resp.status_code} from {resp.request.url}: {resp.text}", request=resp.request, response=resp)
+
+
+def _check_stale_subject_token(resp: httpx.Response):
+    """Okta returns a plain 400 invalid_request (not a distinct error code)
+    when the subject_token/id_token itself is no longer valid -- same
+    shape as any other malformed-request 400, so this matches specifically
+    on the "subject_token" mention in error_description to avoid
+    mis-classifying an unrelated bad request as a stale session."""
+    if resp.status_code != 400:
+        return
+    try:
+        body = resp.json()
+    except ValueError:
+        return
+    if body.get("error") == "invalid_request" and "subject_token" in body.get("error_description", "").lower():
+        raise SessionExpired(body.get("error_description", "subject_token is invalid"))
 
 
 def _build_client_assertion(token_endpoint: str) -> str:
@@ -121,6 +164,7 @@ def _get_id_jag(subject_id_token: str, audience: str, scope: str) -> str:
         },
         timeout=10,
     )
+    _check_stale_subject_token(resp)
     _raise_with_body(resp)
     return resp.json()["access_token"]  # the ID-JAG, per RFC 8693 token-exchange response shape
 
@@ -169,8 +213,19 @@ def get_sts_token_for_user(subject_id_token: str, resource_indicator: str) -> st
     )
     if resp.status_code == 400 and resp.json().get("error") == "interaction_required":
         raise ConsentRequired(resp.json()["interaction_uri"])
+    _check_stale_subject_token(resp)
     _raise_with_body(resp)
     return resp.json()["access_token"]
+
+
+def token_expiry_ts(token: str) -> float | None:
+    """Absolute Unix timestamp the token's `exp` claim names, or None if
+    it isn't a JWT at all (Analytics' vaulted API key -- a deliberate
+    contrast point: no built-in expiry, unlike every OAuth-based resource
+    here). Used only for the Details popover's live TTL readout -- an
+    UNVERIFIED decode, same caveat as call_log's trace-panel display."""
+    claims = decode_jwt_claims(token)
+    return claims.get("exp") if claims else None
 
 
 def get_client_credentials_token(auth_server_id: str, scope: str) -> str:

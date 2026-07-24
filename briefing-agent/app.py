@@ -3,6 +3,7 @@
 Usage: streamlit run app.py
 """
 
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -25,7 +26,7 @@ from auth import (
 from call_log import clear as clear_call_log, get_log
 from i18n import LANGUAGES, current_lang, get_saved_language, rt, save_language, t
 from main import gather_briefing_data, narrate
-from okta_auth import ConsentRequired
+from okta_auth import ConsentRequired, SessionExpired
 from resources import RESOURCES
 
 load_dotenv()
@@ -141,6 +142,9 @@ def require_login():
 
     st.title("🗓️ Monday Briefing Agent")
     st.caption(t("sign_in_prompt"))
+    login_message = st.session_state.pop("login_message", None)
+    if login_message:
+        st.warning(login_message)
     # st.link_button always opens target="_blank" with no way to override it,
     # which breaks this redirect-back-to-the-same-tab flow -- use a plain
     # anchor tag forced to the same tab instead.
@@ -176,6 +180,24 @@ if "code" in agent0_params and consume_agent0_pending_state(agent0_params.get("s
     st.query_params.clear()
     st.rerun()
 
+
+def _handle_session_expired():
+    """Our own login cache (auth.save_user/get_saved_user) never checks
+    whether the underlying Okta session is still alive -- it just trusts a
+    cached user indefinitely. If the user force-logs-out from Okta's own
+    end-user dashboard, this app has no way to know until its next token
+    exchange fails with SessionExpired. Clear everything cached and route
+    back to the login screen instead of surfacing a raw HTTP error."""
+    clear_saved_user()
+    if "user" in st.session_state:
+        del st.session_state["user"]
+    clear_saved_agent0_id_token()
+    if "agent0_id_token" in st.session_state:
+        del st.session_state["agent0_id_token"]
+    st.session_state["login_message"] = t("session_expired_message")
+    st.rerun()
+
+
 @st.dialog(t("architecture_expander"), width="large")
 def _show_architecture_diagram():
     if ARCHITECTURE_DIAGRAM.exists():
@@ -185,6 +207,75 @@ def _show_architecture_diagram():
         st.image(str(ARCHITECTURE_DIAGRAM))
     else:
         st.caption(t("architecture_missing"))
+
+
+CONSENT_POLL_INTERVAL_SECONDS = 3
+CONSENT_POLL_TIMEOUT_SECONDS = 90
+
+
+@st.dialog(t("consent_dialog_title"))
+def _run_consent_flow(selected_keys):
+    """Okta's hosted consent screen can't be embedded here (it blocks
+    iframing, same as any IdP login page) and its post-consent redirect
+    goes to an Okta-owned URL, not back into this app -- so the actual
+    "approve" click unavoidably happens in another tab. What we CAN do:
+    retry the token exchange automatically in the background (retrying
+    the exact same call is exactly how a human would "check again" by
+    hand) so the user never has to come back and click Generate a second
+    time. See SETUP.md §9's STS gotchas for why the redirect can't target
+    this app directly."""
+    explanation_area = st.empty()
+    status_area = st.empty()
+    shown_resource = None
+    deadline = time.time() + CONSENT_POLL_TIMEOUT_SECONDS
+
+    while True:
+        try:
+            data, receipts, token_expiry = gather_briefing_data(
+                subject_id_token=user["_id_token"],
+                agent0_id_token=st.session_state.get("agent0_id_token"),
+                selected=selected_keys,
+            )
+        except SessionExpired:
+            _handle_session_expired()
+        except ConsentRequired as e:
+            if e.resource_label != shown_resource:
+                shown_resource = e.resource_label
+                deadline = time.time() + CONSENT_POLL_TIMEOUT_SECONDS  # fresh window per resource
+                explanations = {
+                    RESOURCES["hr"]["connection_type"]: t("consent_explanation_sts_resource"),
+                    RESOURCES["ticketing"]["connection_type"]: t("consent_explanation_sts_mcp"),
+                }
+                with explanation_area.container():
+                    st.warning(t("consent_warning").format(resource=e.resource_label))
+                    st.markdown(explanations.get(e.connection_type, t("consent_explanation_default")))
+                    st.caption(t("consent_contrast_caption"))
+                    st.info(t("consent_info_new_tab"))
+                    # A raw anchor with target="_blank" set explicitly --
+                    # guarantees the new-tab behavior this whole flow
+                    # depends on, rather than relying on whatever a plain
+                    # markdown link defaults to.
+                    st.markdown(
+                        f'<a href="{e.interaction_uri}" target="_blank" '
+                        'style="display:inline-block;padding:0.5em 1em;background:#FF4B4B;'
+                        'color:white;border-radius:0.5em;text-decoration:none;font-weight:600;">'
+                        f"{t('grant_access_link')}</a>",
+                        unsafe_allow_html=True,
+                    )
+            if time.time() > deadline:
+                status_area.warning(t("consent_timeout_fallback"))
+                return
+            status_area.caption(t("consent_waiting_status").format(resource=e.resource_label))
+            time.sleep(CONSENT_POLL_INTERVAL_SECONDS)
+            continue
+
+        status_area.empty()
+        with st.spinner(t("narrating_spinner")):
+            briefing = narrate(data, lang=current_lang())
+        st.session_state["last_briefing"] = briefing
+        st.session_state["last_briefing_data"] = data
+        st.session_state["last_token_expiry"] = token_expiry
+        st.rerun()
 
 
 with st.sidebar:
@@ -230,6 +321,19 @@ for col, key in zip(toggle_cols, ["hr", "ticketing", "finance", "analytics", "ku
             with st.popover(t("details_popover"), use_container_width=True):
                 st.caption(rt(key, "mechanism"))
                 st.markdown(rt(key, "when_to_use"))
+
+                expiry_map = st.session_state.get("last_token_expiry", {})
+                if key in expiry_map:
+                    exp = expiry_map[key]
+                    if exp is not None:
+                        remaining_min = max(0, int((exp - time.time()) / 60))
+                        expires_at = time.strftime("%H:%M:%S", time.localtime(exp))
+                        st.caption(t("token_ttl_valid").format(minutes=remaining_min, time=expires_at))
+                    else:
+                        st.caption(t("token_ttl_no_fixed"))
+                else:
+                    st.caption(t("token_ttl_not_yet"))
+
                 image = PATTERN_IMAGES.get(key)
                 if image:
                     st.caption(f"🗺️ {rt(key, 'pattern_name')}")
@@ -263,21 +367,18 @@ if st.button(t("generate_button"), type="primary"):
     clear_call_log()
     try:
         with st.spinner(t("connecting_spinner").format(systems=", ".join(sorted(selected_keys)))):
-            data, receipts = gather_briefing_data(
+            data, receipts, token_expiry = gather_briefing_data(
                 subject_id_token=user["_id_token"],
                 agent0_id_token=st.session_state.get("agent0_id_token"),
                 selected=selected_keys,
             )
-    except ConsentRequired as e:
-        st.warning(t("consent_warning").format(resource=e.resource_label))
-        explanations = {
-            RESOURCES["hr"]["connection_type"]: t("consent_explanation_sts_resource"),
-            RESOURCES["ticketing"]["connection_type"]: t("consent_explanation_sts_mcp"),
-        }
-        st.markdown(explanations.get(e.connection_type, t("consent_explanation_default")))
-        st.caption(t("consent_contrast_caption"))
-        st.info(t("consent_info_new_tab"))
-        st.markdown(f"[{t('grant_access_link')}]({e.interaction_uri})")
+    except SessionExpired:
+        _handle_session_expired()
+    except ConsentRequired:
+        # The dialog redoes this exact call as its first poll attempt --
+        # see _run_consent_flow's docstring for why it can't just resume
+        # from here directly.
+        _run_consent_flow(selected_keys)
         st.stop()
 
     with st.spinner(t("narrating_spinner")):
@@ -290,6 +391,7 @@ if st.button(t("generate_button"), type="primary"):
     # would make the briefing vanish the moment anything else was touched.
     st.session_state["last_briefing"] = briefing
     st.session_state["last_briefing_data"] = data
+    st.session_state["last_token_expiry"] = token_expiry
 
 if "last_briefing" in st.session_state:
     st.subheader(t("briefing_subheader"))
@@ -322,4 +424,10 @@ with st.sidebar:
                     st.markdown(t("trace_headers_label"))
                     st.json(entry["headers"])
                 st.markdown(t("trace_response_label").format(status=entry["status_code"]))
-                st.json(entry["response"])
+                if entry["response"] == "":
+                    # e.g. a 204 No Content -- st.json() on an empty
+                    # string tries to JSON-parse it client-side and fails
+                    # with a confusing "Unexpected EOF" error.
+                    st.caption(t("trace_response_empty"))
+                else:
+                    st.json(entry["response"])
