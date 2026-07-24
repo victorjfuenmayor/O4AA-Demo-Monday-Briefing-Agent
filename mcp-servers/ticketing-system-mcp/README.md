@@ -1,6 +1,8 @@
 # Ticketing System MCP Server
 
-An unofficial prototype MCP server providing IT ticketing/service desk functionality with **static API key authentication**. For evaluation and testing purposes only.
+An unofficial prototype MCP server providing IT ticketing/service desk
+functionality with **Okta OAuth 2.0 token validation**. For evaluation and
+testing purposes only.
 
 ## Overview
 
@@ -9,44 +11,67 @@ The Ticketing System MCP Server provides:
 - ✅ Ticket status tracking
 - ✅ Incident reporting
 - ✅ Service request handling
-- ✅ **Static API key authentication** for tool access
+- ✅ **Okta OAuth 2.0 token validation** for all tool calls
 - ✅ HTTP/NDJSON streaming support (FastMCP)
 
 ## Authentication
 
-This server uses **static pre-shared API key** authentication:
-- **Auth Method**: API Key header
-- **Header**: `X-API-Key: ticketing-system-demo-key`
-- **Token Validation**: Simple key matching (no JWT)
+This server validates Okta access tokens for all tool calls (except
+`initialize`) — same validator as every other server in this repo
+(`auth/okta_validator.py`, unmodified, config-driven):
+- **Token Source**: Okta authorization server
+- **Validation**: JWT signature, expiration, audience claims
+- **Authorization Header**: `Authorization: Bearer <access_token>`
+
+Registered on the Okta side as an **MCP Server** (not a Resource Server
+like HR) — Okta *auto-discovers* which authorization server protects this
+resource by calling the RFC 9728 discovery route below, rather than it
+being hand-entered in the console. See `SETUP.md` §10 for the full
+console-side registration recipe, including why the discovery endpoint
+requires this server to be reachable from Okta's cloud at registration
+time (an `ngrok` tunnel for local dev).
 
 ## Quick Start
 
 ```bash
+# Setup
+cp env.example .env
+# Edit .env with your Okta credentials
+
 # Install dependencies
 pip install -r requirements.txt
 
-# Run in HTTP mode (for Okta MCP Adapter)
+# Run in HTTP mode
 python main.py --http 8004
 ```
 
 ## Configuration
 
-### API Key Authentication
-
-The server validates the `X-API-Key` header for all tool calls:
+### .env (Environment Variables)
 ```bash
-X-API-Key: ticketing-system-demo-key
+OKTA_DOMAIN=
+OKTA_AUTHORIZATION_SERVER_ID=
+OKTA_AUDIENCE=
+OKTA_REQUIRED_SCOPES=
 ```
+`OKTA_DOMAIN` and `OKTA_AUTHORIZATION_SERVER_ID` are dual-purpose here:
+besides validating incoming tokens, they're also used to build this
+server's own `/.well-known/oauth-protected-resource` discovery response
+(`https://{OKTA_DOMAIN}/oauth2/{OKTA_AUTHORIZATION_SERVER_ID}`) — the
+document Okta fetches at registration time to learn which authorization
+server protects this resource. Get either one wrong and discovery either
+fails outright or silently points Okta at the wrong authorization server.
 
 ### Available Tools
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `create_ticket` | Create new support ticket | `title: str, description: str, priority: str, assigned_to: str (optional)` |
 | `get_ticket` | Get ticket by ID | `ticket_id: str` |
-| `list_tickets` | List tickets | `status: str (optional), assigned_to: str (optional)` |
-| `update_ticket_status` | Update ticket status | `ticket_id: str, status: str` |
-| `add_ticket_comment` | Add comment to ticket | `ticket_id: str, comment: str` |
+| `list_tickets` | List tickets | `status: str (optional), project: str (optional), assignee: str (optional)` |
+| `create_ticket` | Create new ticket | `title: str, description: str, project: str, priority: str = "Medium", assignee: str (optional)` |
+| `add_comment` | Add comment to a ticket | `ticket_id: str, author: str, text: str` |
+| `transition_ticket` | Change a ticket's status | `ticket_id: str, new_status: str` |
+| `get_ticket_comments` | Get all comments on a ticket | `ticket_id: str` |
 
 ## Usage Examples
 
@@ -55,16 +80,14 @@ X-API-Key: ticketing-system-demo-key
 # Endpoint
 http://localhost:8004/mcp
 
-# Authentication
-X-API-Key: ticketing-system-demo-key
+# Authorization
+Authorization: Bearer <okta_access_token>
 ```
 
-### Via Okta MCP Adapter Gateway
+### Discovery endpoint (what Okta calls at registration time)
 ```bash
-# Gateway will:
-# 1. Receive request from client
-# 2. Route to Ticketing System MCP
-# 3. Add X-API-Key header (from config)
+curl http://localhost:8004/.well-known/oauth-protected-resource
+# {"resource": "http://localhost:8004", "authorization_servers": ["https://{OKTA_DOMAIN}/oauth2/{OKTA_AUTHORIZATION_SERVER_ID}"]}
 ```
 
 ## Implementation Details
@@ -72,45 +95,64 @@ X-API-Key: ticketing-system-demo-key
 - **Framework**: FastMCP 3.0.0b1
 - **Server**: Uvicorn (async HTTP)
 - **Protocol**: MCP (Model Context Protocol) with NDJSON streaming
-- **Auth Method**: Static pre-shared key
-- **Domain**: IT ticketing/service desk mockup
+- **Token Validation**: JWKS-based JWT validation with signature verification
+- **Discovery**: RFC 9728 `/.well-known/oauth-protected-resource` route
+  (`protected_resource_metadata` in `main.py`) — only runs once, at
+  registration; editing the Okta-side entry later won't retrigger it.
 
 ## Request Flow
 
 ```
 Client Request
     ↓
-Initialize (no auth needed)
+Authorization Header (Okta token)
     ↓
-tools/list (no auth needed for listing)
+Initialize (no token needed)
     ↓
-tools/call (API key validated)
+tools/list (validate token)
+    ↓
+tools/call (validate token)
     ↓
 Response
 ```
 
 ## Troubleshooting
 
-**Authentication fails**: Verify `X-API-Key` header is correct
+**Token validation fails**: Verify `OKTA_DOMAIN` and
+`OKTA_AUTHORIZATION_SERVER_ID` in `.env`
 
 **Port already in use**: Change port in startup command: `python main.py --http 8005`
 
-**Module not found**: Run `pip install -r requirements.txt`
+**Missing environment variables**: Copy `env.example` to `.env` and fill in values
+
+**"No authorization servers were found" during Okta registration**:
+the discovery endpoint isn't reachable — verify the `ngrok` tunnel first
+with `curl https://<ngrok-url>/.well-known/oauth-protected-resource`, and
+remember discovery only runs at *creation* time (delete and recreate the
+MCP Server entry after fixing this, editing won't retrigger it).
+
+**No `client_credentials` fallback**: unlike HR, this resource's
+authorization-server policy only allows `authorization_code` — there's no
+app-only path, so the calling agent must have a logged-in user.
 
 ## Project Structure
 
 ```
 ticketing-system-mcp/
-├── main.py              # FastMCP server with HTTP handler
-└── requirements.txt     # Python dependencies
+├── main.py              # FastMCP server with HTTP handler + discovery route
+├── requirements.txt     # Python dependencies
+├── env.example         # Environment template
+└── auth/
+    ├── __init__.py
+    └── okta_validator.py  # Okta token validation (same code as every other server)
 ```
 
 ## Testing
 
 ```bash
-# Using curl with API key
+# Using curl with Okta token
 curl -X POST http://localhost:8004/mcp \
-  -H "X-API-Key: ticketing-system-demo-key" \
+  -H "Authorization: Bearer <your_okta_token>" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -124,6 +166,7 @@ curl -X POST http://localhost:8004/mcp \
 
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [FastMCP Documentation](https://gofastmcp.com/)
+- [Okta Developer Docs](https://developer.okta.com/)
 
 ## Status
 

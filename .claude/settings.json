@@ -16,7 +16,16 @@
       "Bash(\".venv/bin/python3\" -m py_compile mcp-servers/kudos-wall-mcp/main.py mcp-servers/kudos-wall-mcp/xaa_resource_as.py mcp-servers/kudos-wall-mcp/auth/okta_validator.py)",
       "Bash(\".venv/bin/python3\" -m py_compile briefing-agent/okta_auth.py mcp-servers/kudos-wall-mcp/main.py mcp-servers/kudos-wall-mcp/xaa_resource_as.py)",
       "Bash(python3 -m py_compile main.py resources.py okta_auth.py)",
-      "Bash(python3 -m py_compile app.py main.py resources.py okta_auth.py)"
+      "Bash(python3 -m py_compile app.py main.py resources.py okta_auth.py)",
+      "Bash(rtk grep *)",
+      "Bash(rtk read *)",
+      "Bash(\"/Users/victor.fuenmayor/Demo/O4AA Hackathon/.venv/bin/python\" -m py_compile app.py main.py okta_auth.py call_log.py i18n.py)",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs -r kill)",
+      "Bash(nohup \"/Users/victor.fuenmayor/Demo/O4AA Hackathon/.venv/bin/streamlit\" run app.py --server.headless true --server.port 8501)",
+      "Bash(curl -s http://localhost:8501/_stcore/health)",
+      "Read(//private/tmp/**)",
+      "Bash(\"/Users/victor.fuenmayor/Demo/O4AA Hackathon/.venv/bin/python\" -m py_compile okta_auth.py)"
     ]
   }
 }

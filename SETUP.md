@@ -7,11 +7,12 @@ our own tenant. Steps 1–4 use the core Identity Management API
 uses the *separate* Okta Privileged Access API
 (`https://{org}.pam.okta.com/v1/teams/{team}/...`) — different product,
 different subdomain, different credentials. Step 6 is console-only today.
-Step 8 (real Cross-App Access / ID-JAG) is a fully-documented investigation
-that hit a genuine platform gap and doesn't run today — **step 9 (native AI
-Agent token exchange / STS) is the one that actually works end-to-end** and
-is what HR uses in the running code; if you only need one working
-real-user-context mechanism, skip straight to §9.
+**Step 8 (real Cross-App Access / ID-JAG) documents an investigation that
+initially hit a dead end but was later corrected — see §12 for the working
+recipe (Kudos Wall), currently paused one config step short of live.
+Step 9 (native AI Agent token exchange / STS) is the other working
+mechanism**, used by HR/Ticketing; if you only need one real-user-context
+mechanism and don't need real XAA specifically, skip straight to §9.
 
 ## Prerequisites
 
@@ -19,7 +20,15 @@ real-user-context mechanism, skip straight to §9.
 - Okta Privileged Access (OPA) provisioned for the org, and console access to
   it (`https://{org}.pam.okta.com/t/{team_name}/home`).
 - Anthropic API key (a direct one — see gotcha below).
-- Python 3.11+.
+- Python 3.11+ (the codebase uses `X | None` union type hints throughout,
+  which need 3.10+; 3.11 is what this was built and tested on).
+- `pip`/a virtualenv tool. One shared virtualenv for the whole repo (agent +
+  all MCP servers) is enough — see §6 for the exact install commands; there's
+  no need for a separate venv per server.
+- [`ngrok`](https://ngrok.com/) (or any tool that gives a backend a public
+  HTTPS URL) — needed at registration time for Ticketing (§10) and Kudos
+  Wall (§12), since Okta's cloud has to reach those servers live to
+  auto-discover/validate them. Not needed for HR, Finance, or Analytics.
 
 ## 1. Vendor the sample MCP servers
 
@@ -178,14 +187,25 @@ Once registered, add **Resource Connections**:
 
 ## 6. Run it
 
-```bash
-# one terminal per server
-cd mcp-servers/hr-system-mcp        && python main.py --http 8001
-cd mcp-servers/finance-system-mcp   && python main.py --http 8002
-cd mcp-servers/analytics-system-mcp && python main.py --http 8003
-cd mcp-servers/ticketing-system-mcp && python main.py --http 8004
+Install dependencies once, into a single shared virtualenv at the repo
+root — every server's `requirements.txt` plus the agent's own:
 
-cd briefing-agent && python main.py
+```bash
+python3 -m venv .venv && source .venv/bin/activate   # once, at the repo root
+pip install -r briefing-agent/requirements.txt
+for d in mcp-servers/*/; do pip install -r "$d/requirements.txt"; done
+```
+
+Then, one terminal per server (all from that same activated venv):
+
+```bash
+cd mcp-servers/hr-system-mcp        && cp env.example .env && python main.py --http 8001
+cd mcp-servers/finance-system-mcp   && cp env.example .env && python main.py --http 8002
+cd mcp-servers/analytics-system-mcp && python main.py --http 8003
+cd mcp-servers/ticketing-system-mcp && cp env.example .env && python main.py --http 8004
+cd mcp-servers/kudos-wall-mcp       && python main.py --http 8005   # paused, see §12 -- optional
+
+cd briefing-agent && cp .env.example .env && python main.py   # fill in .env first, see below
 ```
 
 Expect a "Receipts" panel confirming all four connections (the CLI's
@@ -441,6 +461,24 @@ differs.
   `settings.oauthClient` at all even when the values did apply
   successfully on PUT (seen with the `test-cwo-app` type during the XAA
   investigation above; harmless but confusing when verifying).
+- If the cached `id_token` goes stale (e.g. the user force-logs-out from
+  Okta's own end-user dashboard, independently of this app), the next
+  token-exchange call fails with a plain `400 invalid_request:
+  'subject_token' is invalid.` — same generic error shape as any other
+  malformed request, no distinct error code. `okta_auth.py` detects this
+  specifically (matches `"subject_token"` in `error_description`) and
+  raises `SessionExpired`, which `app.py` catches to clear the cached
+  login and route back to the sign-in screen instead of crashing.
+- **This one-time consent is NOT manageable/revocable via any documented
+  Okta mechanism as of this writing** — confirmed live: `GET
+  /api/v1/users/{id}/grants` returns zero grants for a user who has
+  actively completed this flow (it isn't tracked as a classic OAuth
+  grant at all), the end-user self-service settings page shows nothing
+  for it, and the AI Agent's own Admin Console object has no visible
+  per-user consent list either. **The only known way to re-trigger
+  `interaction_required` for testing today is a different test user.**
+  Don't build a "revoke consent" feature against the Grants API for this
+  — a `DELETE` against it returns `204` even when it revoked nothing.
 
 ## 10. Same STS mechanism via the "MCP Server" resource type (Ticketing)
 
@@ -592,10 +630,11 @@ This demo's five resources map onto that catalog like this:
 | Analytics (OPA vault, §4) | **Credential Vault Broker** building block (part of pattern 1, not a full pattern of its own) | Legacy static-key resource, no OAuth at all |
 | Kudos Wall (real XAA/ID-JAG, §12 — currently paused) | **True XAA** (the actual `draft-ietf-oauth-identity-assertion-authz-grant` protocol) | Admin-defined access, no per-user consent — appropriate for low-sensitivity data. The resource runs its **own** authorization server, unlike every other row here |
 
-In the Streamlit UI, each resource's "Details" expander (in the "Which
+In the Streamlit UI, each resource's "Details" popover (in the "Which
 systems should the agent connect to?" section) shows this mapping plus a
-small sequence diagram (generated fresh via the Lucid MCP integration —
-`assets/patterns/*.png` — not copied from the existing deck's canvas).
+small sequence diagram, expandable to native resolution (generated fresh
+via the Lucid MCP integration — `assets/patterns/*.png` — not copied from
+the existing deck's canvas).
 
 ## 12. Real Cross-App Access, actually working — Kudos Wall (currently paused)
 
@@ -689,6 +728,17 @@ id_token) with the same kind of module-level global already used for the
 pending-`state` CSRF trackers — see `auth.save_user()`/`get_saved_user()`
 and `save_agent0_id_token()`/`get_saved_agent0_id_token()`.
 
+### Environment variables
+
+Unlike every other sample server here, Kudos Wall runs its own
+authorization server, so it needs its own signing key and public URL on
+top of the generic validator config the others share. See
+`mcp-servers/kudos-wall-mcp/env.example` for the full list with
+explanations (including the exact `jwcrypto` one-liner to generate
+`SIGNING_KEY_JWK`) — no `.env` was committed for this one before, so
+that file didn't exist until this pass; use it as the template the same
+way as every other server's `env.example`.
+
 ### Current status: paused
 
 We got as far as a real, specific error that's genuinely different from
@@ -706,8 +756,56 @@ server are already fully wired and don't need further changes.
 - **Per-resource selection with inline details** (not a separate
   post-generation "receipts" section): the "Which systems should the
   agent connect to?" checkboxes each show the `connection_type` and a
-  "Details" expander with the mechanism description and pattern diagram —
-  all static, so it renders before you even click Generate.
+  "Details" **popover** (`st.popover`, not an expander) with the
+  mechanism description, the Why/Requires decision criteria, a small
+  pattern-diagram thumbnail, and (once a briefing's been generated) a
+  live token-TTL readout for that resource — all static except the TTL,
+  so most of it renders before you even click Generate.
+- **Live token expiry, per resource** (`okta_auth.token_expiry_ts()`,
+  threaded through `main.gather_briefing_data()`'s third return value):
+  decodes the actual `exp` claim of whichever token was just fetched for
+  each resource and shows "valid for N more minutes (expires at HH:MM:SS)"
+  in that resource's Details popover — a real, live number, not a
+  description of the mechanism. Analytics shows "no fixed expiry" instead
+  (a deliberate contrast — its static vaulted key isn't a JWT at all).
+  Resets to "generate a briefing to see this" whenever a resource wasn't
+  part of the last run.
+- **Diagrams open in a native-resolution modal, not inline.** Both the
+  full architecture diagram (button in the sidebar) and each resource's
+  pattern diagram (an "Expand diagram" button inside its Details popover,
+  below a small thumbnail) open via `st.dialog` at the image's native
+  pixel size — no width cap, so nothing gets up- or down-scaled. Gotcha:
+  a dialog opened from a button *inside* a popover renders **behind** the
+  popover by default (both use `role="dialog"` internally, but the
+  popover's floating-overlay portal has a higher default z-index) — fixed
+  with a global CSS override forcing `[data-testid="stDialog"]` to a very
+  high `z-index`.
+- **The "Grant access" consent flow auto-continues — no second click.**
+  Okta's hosted consent screen for HR/Ticketing can't be embedded (it
+  blocks iframing) and its post-consent redirect targets a fixed,
+  Okta-owned URL, not this app — so the actual "Approve" click
+  unavoidably happens in a separate tab. But once that's done, simply
+  **retrying the same token-exchange call succeeds** (§9) — so instead of
+  telling the user to come back and click Generate again,
+  `app.py`'s `_run_consent_flow()` opens a modal and retries automatically
+  every 3 seconds (up to 90s per resource, chaining to the next resource
+  if e.g. HR resolves and Ticketing is still pending) until it succeeds,
+  then closes itself and renders the briefing. Cuts the flow from 3
+  manual steps to 2 (click Generate, click Grant access in the new tab).
+- **Stale-session handling.** If the cached login goes stale (most often:
+  the user force-logged-out from Okta's own end-user dashboard, which
+  this app has no way to know about until its next API call fails), the
+  app catches `okta_auth.SessionExpired` and routes back to the sign-in
+  screen with a message, instead of crashing with a raw
+  `httpx.HTTPStatusError`. See §9's Gotchas for the exact error shape
+  this detects.
+- **Results persist across unrelated reruns.** The generated briefing is
+  stored in `st.session_state["last_briefing"]` (plus `_data` and
+  `_token_expiry`) and rendered unconditionally, rather than only inside
+  the `if st.button("Generate"):` block — otherwise it would vanish the
+  instant *any other* widget (the language selector, a checkbox) triggers
+  a rerun, since `st.button()` only returns `True` on the exact rerun its
+  own click caused.
 - **Live Okta ↔ MCP call trace** (`call_log.py`, sidebar): every HTTP call
   the agent makes during a run — Okta token endpoints, the MCP servers'
   `/mcp` calls — logged with method/URL/request/response. Secrets
@@ -718,11 +816,13 @@ server are already fully wired and don't need further changes.
   start of each "Generate" click; a "Clear trace" button resets it
   manually. `logged_post()`/`logged_get()` in `call_log.py` are drop-in
   replacements for `httpx.post()`/`httpx.get()` used throughout
-  `okta_auth.py`, `auth.py`, and `mcp_client.py`.
+  `okta_auth.py`, `auth.py`, and `mcp_client.py`. A `204`/empty-body
+  response shows "(no body)" rather than erroring — `st.json("")` tries
+  to JSON-parse an empty string client-side and fails.
 - **Language selector** (`i18n.py` + a `st.selectbox` at the top of the
   sidebar): switches the *entire* UI between English (US), Spanish
   (Latin America), and Brazilian Portuguese — including the long Why/
-  Requires explanations in each resource's "Details" popover, the
+  Requires explanations in each resource's Details popover, the
   MCP-vs-Resource-Server writeup, and every consent/warning/info message.
   Protocol/product terms (`OAuth`, `client_credentials`, `private_key_jwt`,
   `MCP`, `XAA`, `ID-JAG`, `Resource Server`, etc.) are deliberately left
@@ -730,8 +830,11 @@ server are already fully wired and don't need further changes.
   as-is. The selected language is also passed into `main.narrate()`, so
   Claude writes the generated briefing itself in that language, not just
   the surrounding UI. Selection lives in `st.session_state["lang"]`
-  (`"en"` / `"es"` / `"pt-BR"`) for the duration of the session; nothing is
-  persisted across restarts. To add a string: add a key to `TEXT` (or a
+  (`"en"` / `"es"` / `"pt-BR"`) and, since a hard browser refresh resets
+  `st.session_state`, is also cached in a module-level global
+  (`i18n.save_language`/`get_saved_language`, same pattern as
+  `auth.save_user`/`get_saved_user`) so it survives a refresh within the
+  same running server process. To add a string: add a key to `TEXT` (or a
   field to `RESOURCE_TEXT` for per-resource content) in `i18n.py` with all
   three languages, then reference it via `t("key")` / `rt(resource_key,
   "field")` in `app.py`.
@@ -741,3 +844,12 @@ server are already fully wired and don't need further changes.
   screencast**, Settings, About), not just the Deploy button. This config
   is only read at process startup, so changing it requires a full restart
   (`streamlit run app.py ...`), not just a rerun/refresh.
+
+**Streamlit gotcha worth internalizing if you extend this further:**
+changes to `app.py` itself take effect on the very next rerun
+automatically, but changes to any *imported* module (`main.py`,
+`auth.py`, `okta_auth.py`, `resources.py`, `i18n.py`, `call_log.py`)
+need a full process restart (kill the `streamlit run` process and start
+it again) — Python caches imported modules in `sys.modules`, so a plain
+browser refresh silently keeps running the old code, or throws an
+`ImportError` if you added a new name to one of those files.

@@ -48,10 +48,13 @@ Agent object in Okta Universal Directory with a human owner, so the whole
 lifecycle — discovery, onboarding, least-privilege scopes, and (stretch) a
 kill switch — is demoable, not just the API calls.
 
-The Streamlit UI includes a language selector (top of the sidebar) that
-switches the entire experience — including the long per-resource
-explanations and the generated briefing itself — between English (US),
-Spanish (Latin America), and Brazilian Portuguese. See `SETUP.md` §13.
+Beyond the core mechanics, the Streamlit UI has a language selector
+(switches the entire experience, including the generated briefing itself,
+across English (US)/Spanish (LatAm)/Brazilian Portuguese), a live
+per-resource token-expiry readout, native-resolution diagram popups, and
+an auto-continuing "Grant access" consent flow that polls in the
+background instead of requiring a second click. Full list in `SETUP.md`
+§13.
 
 ## Layout
 
@@ -73,23 +76,34 @@ briefing-agent/         main.py (agent + CLI), app.py (Streamlit UI),
 
 ## Running locally
 
-1. Start each backend MCP server in its own terminal:
+0. Install dependencies once, into a single shared virtualenv at the repo
+   root (no need for a separate venv per server):
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -r briefing-agent/requirements.txt
+   for d in mcp-servers/*/; do pip install -r "$d/requirements.txt"; done
+   ```
+   Requires Python 3.11+ (the codebase uses `X | None` union type hints,
+   which need 3.10+).
+
+1. Start each backend MCP server in its own terminal (each has its own
+   `env.example` — copy it to `.env` and fill in the values first):
    ```bash
    cd mcp-servers/hr-system-mcp        && cp env.example .env && python main.py --http 8001
    cd mcp-servers/finance-system-mcp   && cp env.example .env && python main.py --http 8002
-   cd mcp-servers/analytics-system-mcp && python main.py --http 8003
-   cd mcp-servers/ticketing-system-mcp && python main.py --http 8004
-   cd mcp-servers/kudos-wall-mcp       && python main.py --http 8005   # paused, see SETUP.md §12
+   cd mcp-servers/analytics-system-mcp && python main.py --http 8003   # no auth config needed
+   cd mcp-servers/ticketing-system-mcp && cp env.example .env && python main.py --http 8004
+   cd mcp-servers/kudos-wall-mcp       && cp env.example .env && python main.py --http 8005   # paused, see SETUP.md §12 -- optional
    ```
    HR and Finance need their `.env` filled in with the tenant domain and the
    custom authorization server ID created below. Ticketing and Kudos Wall
    each need a public `ngrok` tunnel (see SETUP.md §10 and §12) since Okta
-   discovers/validates against them live.
+   discovers/validates against them live; Kudos Wall additionally needs a
+   generated signing keypair (exact command in its `env.example`).
 
 2. Configure and run the agent:
    ```bash
    cd briefing-agent
-   pip install -r requirements.txt
    cp .env.example .env   # fill in Okta + Anthropic values
    python main.py                 # CLI
    streamlit run app.py           # or: browser UI, gated behind Okta login

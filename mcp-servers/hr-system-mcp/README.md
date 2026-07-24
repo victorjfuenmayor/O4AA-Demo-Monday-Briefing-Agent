@@ -52,6 +52,7 @@ OKTA_REQUIRED_SCOPES=
 | `get_employee` | Get employee by ID | `employee_id: str` |
 | `list_employees` | List all employees | None |
 | `get_employee_payroll` | Get payroll info | `employee_id: str` |
+| `request_time_off` | Submit a time-off request | `employee_id: str, time_off_type: str, start_date: str, end_date: str` |
 | `get_time_off_requests` | Get time-off requests | `employee_id: str (optional)` |
 
 ## Usage Examples

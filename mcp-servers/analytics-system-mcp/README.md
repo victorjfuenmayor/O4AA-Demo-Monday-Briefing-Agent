@@ -1,23 +1,32 @@
 # Analytics System MCP Server
 
-An unofficial prototype MCP server providing business analytics functionality with **static API key authentication**. For evaluation and testing purposes only.
+An unofficial prototype MCP server providing business analytics/observability
+functionality, modeling a legacy backend with **no OAuth support at all**.
+For evaluation and testing purposes only.
 
 ## Overview
 
 The Analytics System MCP Server provides:
-- ✅ Sales analytics and reporting
-- ✅ Revenue metrics and dashboards
-- ✅ Customer analytics
-- ✅ Performance data access
-- ✅ **Static API key authentication** for tool access
+- ✅ Log querying
+- ✅ Dashboard listing/lookup
+- ✅ Metric listing/lookup
+- ✅ Alert history
 - ✅ HTTP/NDJSON streaming support (FastMCP)
 
 ## Authentication
 
-This server uses **static pre-shared API key** authentication:
-- **Auth Method**: API Key header
-- **Header**: `X-API-Key: analytics-system-demo-key`
-- **Token Validation**: Simple key matching (no JWT)
+**This server does not check any credential today** — `main.py`'s
+`mcp_handler` serves `initialize`/`tools/list`/`tools/call` unconditionally,
+with no header check anywhere in the request path. This is a real gap
+worth knowing about, not a design choice to imitate: the demo's actual
+security story for this resource lives entirely on the **caller's** side
+(`briefing-agent/okta_auth.get_vaulted_secret()` fetches
+`TICKETING_API_KEY`/`ANALYTICS_API_KEY` just-in-time from an Okta
+Privileged Access vault rather than static config, and sends it as
+`X-API-Key: analytics-system-demo-key`) — but this server itself doesn't
+enforce that key server-side. If you're extending this demo and want the
+server to actually reject the wrong key, that check needs to be added to
+`mcp_handler`; it isn't there yet.
 
 ## Quick Start
 
@@ -25,27 +34,23 @@ This server uses **static pre-shared API key** authentication:
 # Install dependencies
 pip install -r requirements.txt
 
-# Run in HTTP mode (for Okta MCP Adapter)
+# Run in HTTP mode
 python main.py --http 8003
 ```
 
-## Configuration
-
-### API Key Authentication
-
-The server validates the `X-API-Key` header for all tool calls:
-```bash
-X-API-Key: analytics-system-demo-key
-```
+No `.env`/credentials needed to run this server itself, for the reason
+above.
 
 ### Available Tools
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `get_sales_metrics` | Get sales metrics for period | `period: str (daily/weekly/monthly)` |
-| `get_revenue_forecast` | Get revenue forecast | `months: int` |
-| `get_customer_analytics` | Get customer metrics | `segment: str (optional)` |
-| `get_dashboard_data` | Get dashboard summary | None |
+| `query_logs` | Query recent logs | `service: str (optional), level: str (optional), limit: int = 10` |
+| `list_dashboards` | List all dashboards | None |
+| `get_dashboard` | Get a dashboard by ID | `dashboard_id: str` |
+| `get_metric` | Get a single metric | `metric_name: str` |
+| `list_metrics` | List all metrics | None |
+| `get_alert_history` | Get recent alert history | `limit: int = 20` |
 
 ## Usage Examples
 
@@ -53,17 +58,6 @@ X-API-Key: analytics-system-demo-key
 ```bash
 # Endpoint
 http://localhost:8003/mcp
-
-# Authentication
-X-API-Key: analytics-system-demo-key
-```
-
-### Via Okta MCP Adapter Gateway
-```bash
-# Gateway will:
-# 1. Receive request from client
-# 2. Route to Analytics System MCP
-# 3. Add X-API-Key header (from config)
 ```
 
 ## Implementation Details
@@ -71,28 +65,27 @@ X-API-Key: analytics-system-demo-key
 - **Framework**: FastMCP 3.0.0b1
 - **Server**: Uvicorn (async HTTP)
 - **Protocol**: MCP (Model Context Protocol) with NDJSON streaming
-- **Auth Method**: Static pre-shared key
-- **Domain**: Business analytics/BI system mockup
+- **Auth**: none server-side (see above) — client-side vaulting is the
+  actual security mechanism this resource demonstrates
+- **Domain**: Business analytics/observability system mockup
 
 ## Request Flow
 
 ```
 Client Request
     ↓
-Initialize (no auth needed)
+Initialize (no auth)
     ↓
-tools/list (no auth needed for listing)
+tools/list (no auth)
     ↓
-tools/call (API key validated)
+tools/call (no auth)
     ↓
 Response
 ```
 
 ## Troubleshooting
 
-**Authentication fails**: Verify `X-API-Key` header is correct
-
-**Port already in use**: Change port in startup command: `python main.py --http 8004`
+**Port already in use**: Change port in startup command: `python main.py --http 8003`
 
 **Module not found**: Run `pip install -r requirements.txt`
 
@@ -107,9 +100,7 @@ analytics-system-mcp/
 ## Testing
 
 ```bash
-# Using curl with API key
 curl -X POST http://localhost:8003/mcp \
-  -H "X-API-Key: analytics-system-demo-key" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",

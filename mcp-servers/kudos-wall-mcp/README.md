@@ -14,16 +14,26 @@ XAA, the Issuer URL field).
 | Route | Purpose |
 |---|---|
 | `POST /mcp` | The actual MCP tools (`list_kudos`, `give_kudos`), gated by a bearer token minted by this same server |
-| `POST /v1/token` | jwt-bearer redemption -- exchanges an ID-JAG (minted by Okta's org token endpoint) for a resource access token |
+| `POST /oauth2/kudos-wall/v1/token` | jwt-bearer redemption -- exchanges an ID-JAG (minted by Okta's org token endpoint) for a resource access token |
 | `GET /oauth2/kudos-wall/.well-known/oauth-authorization-server` | Discovery doc for this server's own issuer |
 | `GET /oauth2/kudos-wall/v1/keys` | JWKS for the keypair this server signs its own tokens with |
+
+## Available Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `list_kudos` | List kudos, optionally filtered | `recipient: str (optional)` |
+| `give_kudos` | Give a kudos to someone | `from_person: str, to_person: str, message: str, category: str = "shoutout"` |
 
 ## Quick start
 
 ```bash
 pip install -r requirements.txt
-# .env already has a generated signing key -- fill in OKTA_DOMAIN and
-# PUBLIC_BASE_URL once ngrok is running (see SETUP.md §12)
+cp env.example .env
+# Fill in SIGNING_KEY_JWK (generate with the one-liner in env.example),
+# PUBLIC_BASE_URL and OKTA_DOMAIN once ngrok is running, and OKTA_ORG_DOMAIN
+# (your real Okta tenant domain) -- see env.example for the full list with
+# explanations, and SETUP.md §12 for the console-side setup.
 python main.py --http 8005
 ```
 

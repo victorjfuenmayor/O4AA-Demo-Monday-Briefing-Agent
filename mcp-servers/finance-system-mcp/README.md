@@ -52,8 +52,8 @@ OKTA_REQUIRED_SCOPES=
 | `submit_expense_report` | Submit new expense report | `employee_id: str, title: str, amount: float, items: list` |
 | `get_invoice` | Get invoice by ID | `invoice_id: str` |
 | `list_invoices` | List invoices | `status: str (optional)` |
-| `get_budget` | Get department budget | `department: str` |
-| `list_budgets` | List all budgets | None |
+| `get_department_budget` | Get department budget | `department: str` |
+| `list_all_budgets` | List all budgets | None |
 
 ## Usage Examples
 
@@ -104,7 +104,7 @@ Response
 
 **Token validation fails**: Verify `OKTA_DOMAIN` and `OKTA_AUTHORIZATION_SERVER_ID` in `.env`
 
-**Port already in use**: Change port in startup command: `python main.py --http 8003`
+**Port already in use**: Change port in startup command: `python main.py --http 8002`
 
 **Missing environment variables**: Copy `env.example` to `.env` and fill in values
 

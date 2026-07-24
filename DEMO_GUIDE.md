@@ -37,10 +37,12 @@ declared and governed in Okta."
 - Run it once yourself first. Data (mock employee names, ticket IDs, alert
   states) is static/deterministic aside from timestamps, so the output is
   predictable — read it once so you're not surprised live.
-- The landing page has a full architecture diagram (expander near the top)
-  showing every component — Streamlit modules, Okta tenant objects, OPA,
-  Anthropic, all 5 backend MCP servers. Good opener for a technical
-  audience before diving into any one connection's detail.
+- The landing page has a sidebar button ("🗺️ Full architecture diagram")
+  that opens a full-resolution popup showing every component — Streamlit
+  modules, Okta tenant objects, OPA, Anthropic, all 5 backend MCP servers.
+  Good opener for a technical audience before diving into any one
+  connection's detail. (Each resource's own pattern diagram, inside its
+  Details popover, opens the same way via an "Expand diagram" button.)
 - There's a language selector at the top of the sidebar (English (US) /
   Spanish (Latin America) / Brazilian Portuguese) — it translates the
   entire UI, including every Details popover and the generated briefing
@@ -59,15 +61,18 @@ declared and governed in Okta."
 > through Okta — the agent isn't a standing service anyone can just open."
 
 The *first* time anyone uses the HR or Ticketing connections, clicking
-"Generate this week's briefing" will show a one-time **"Grant access"**
-link instead of the briefing — that's expected, not a bug, and it happens
-*separately* for each of the two (consent is per-resource). It **opens in a
-new tab on purpose** (the consent redirect lands on an Okta-owned page, not
-back in the app, so navigating the same tab there would log you out) —
-approve, close that tab, come back to the app tab, click the button again.
-Worth narrating live if it happens: *"That consent step you just saw is the
-org acknowledging, once, that I'm allowed to let this agent see this
-system's data on my behalf — after that, it's silent."*
+"Generate this week's briefing" opens a modal with a one-time **"Grant
+access"** link instead of the briefing — that's expected, not a bug, and
+it happens *separately* for each of the two (consent is per-resource).
+The link **opens in a new tab on purpose** (Okta's consent screen can't be
+embedded, and its redirect lands on an Okta-owned page, not back in this
+app) — approve there, then just switch back to this tab: **it's already
+polling in the background** and continues automatically the moment access
+is granted, no second click needed. Worth narrating live if it happens:
+*"That consent step you just saw is the org acknowledging, once, that I'm
+allowed to let this agent see this system's data on my behalf — after
+that, it's silent. And notice I didn't have to come back and click
+anything again — the app's just watching for it."*
 
 Before clicking, it's worth popping open the **"❓ MCP Server vs Resource
 Server"** button on the front door — it's the quiet setup for the HR/
@@ -82,9 +87,10 @@ agent connect to?" checkboxes.**
 > and I can decide, live, which systems the agent actually touches."
 
 Each checkbox already shows its `connection_type` underneath, and a
-"Details" expander with the mechanism description *and* a pattern
+"Details" popover with the mechanism description *and* a pattern
 diagram — all static, so you can walk through the whole story before ever
-clicking Generate:
+clicking Generate (a live token-expiry readout also shows up here once
+you've generated a briefing at least once):
 - **HR** — this is the one to slow down on: *"This isn't a service account
   with a bag of permissions — the agent just proved, cryptographically with
   its own signing key, who it is, and separately proved who I am, and Okta
@@ -109,7 +115,10 @@ clicking Generate:
   expiring in an hour. If this agent gets compromised five minutes from
   now, that token is worthless in fifty-five minutes without anyone doing
   anything. No user context in this one, deliberately — a good contrast
-  with HR and Ticketing."*
+  with HR and Ticketing."* (After generating a briefing, open Finance's
+  Details popover and point at the live "valid for N more minutes"
+  line — this isn't a claim, it's the actual token's real expiry, decoded
+  right there.)
 - **Analytics**: *"This system is older — no OAuth support at all, just a
   static API key. That's still most of what you actually have in
   production today. Instead of that key living in the agent's config file
@@ -118,7 +127,7 @@ clicking Generate:
   handshake — generate a keypair, prove who it is, get the secret
   re-encrypted just for it — to read that key just now. It's never at rest
   anywhere the agent controls."*
-- **Kudos Wall (leave unchecked, but worth opening the Details expander)**:
+- **Kudos Wall (leave unchecked, but worth opening the Details popover)**:
   *"This one's real Cross-App Access — a different IETF protocol than the
   STS mechanism HR and Ticketing use, and the resource runs its **own**
   authorization server instead of trusting Okta's directly. It's fully
@@ -172,6 +181,18 @@ one of them."* Full mapping and citation in `SETUP.md` §11.
 > one action. It's a natural next step given everything's already declared
 > here, not a re-architecture."
 
+Honest caveat if pressed on specifics: we actually looked into building a
+"revoke consent" button for HR/Ticketing's one-time consent specifically,
+and found there's **no documented Okta mechanism to revoke it today** —
+it isn't tracked as a classic OAuth grant (confirmed live against the
+Grants API), and neither the end-user self-service page nor the AI
+Agent's own Admin Console object exposes it either. Not a demo blocker —
+each *access token* still only lives an hour regardless (that part of the
+kill-switch story, "worthless within the hour," holds up fine) — but the
+underlying one-time *consent* itself has no revoke path yet. Good material
+for "what's still rough about this feature" if an Okta PM is in the room,
+an honest gap in tooling maturity for this specific consent type.
+
 ## Anticipated questions
 
 - **"Is this real or a mockup?"** Real. Every OAuth token and every vaulted
@@ -222,7 +243,8 @@ one of them."* Full mapping and citation in `SETUP.md` §11.
   verifies it against Okta's public keys and mints its own access token.
   That's the actual architectural difference real XAA introduces, and it's
   worth drawing on a whiteboard if asked — see the full architecture
-  diagram (front door, expander near the top) or `SETUP.md` §12.
+  diagram ("🗺️ Full architecture diagram" button in the sidebar) or
+  `SETUP.md` §12.
 
 ## What this demo is NOT
 
