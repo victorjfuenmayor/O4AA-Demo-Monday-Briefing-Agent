@@ -108,6 +108,15 @@ briefing-agent/         main.py (agent + CLI), app.py (Streamlit UI),
    python main.py                 # CLI
    streamlit run app.py           # or: browser UI, gated behind Okta login
    ```
+   Okta employees: `ANTHROPIC_API_KEY` can be a short-lived token from the
+   internal LiteLLM proxy instead of a direct Anthropic key — see the
+   comment above that line in `.env.example`, and SETUP.md §6 for the
+   `ocm auth litellm` command and its ~1hr refresh cadence.
+
+   **Gotcha:** on a machine where `streamlit` has never run before (or after
+   a fresh restart wipes `~/.streamlit/`), its first launch blocks on an
+   interactive email prompt with no visible port/error if there's no
+   attached terminal. Fix once: `mkdir -p ~/.streamlit && printf '[general]\nemail = ""\n' > ~/.streamlit/credentials.toml`.
 
 ## Okta tenant setup
 

@@ -19,7 +19,9 @@ mechanism and don't need real XAA specifically, skip straight to §9.
 - Okta org API token (Security → API → Tokens) with admin rights.
 - Okta Privileged Access (OPA) provisioned for the org, and console access to
   it (`https://{org}.pam.okta.com/t/{team_name}/home`).
-- Anthropic API key (a direct one — see gotcha below).
+- Anthropic API key — a direct one, or (Okta employees) a short-lived
+  token from the internal LiteLLM proxy at `llm.atko.ai` — see gotcha below
+  for how to mint one and why it needs periodic refreshing.
 - Python 3.11+ (the codebase uses `X | None` union type hints throughout,
   which need 3.10+; 3.11 is what this was built and tested on).
 - `pip`/a virtualenv tool. One shared virtualenv for the whole repo (agent +
@@ -215,9 +217,23 @@ briefing. If a connection fails, the receipts panel tells you which one
 and the traceback tells you why — it's a short pipeline.
 
 **Gotcha (unrelated to Okta):** if narration throws `AuthenticationError`
-mentioning `LiteLLM_VerificationTokenTable`, the Anthropic key you were
-given is scoped to an internal proxy, not `api.anthropic.com` directly — get
-a direct key or the proxy's base URL (`ANTHROPIC_BASE_URL`).
+mentioning `LiteLLM_VerificationTokenTable`, `ANTHROPIC_API_KEY` is a token
+for the internal LiteLLM proxy (`ANTHROPIC_BASE_URL=https://llm.atko.ai`),
+not a direct `api.anthropic.com` key, and it has expired. Okta employees
+with `ocm` installed can mint a fresh one:
+
+```bash
+NEW_KEY=$(ocm auth litellm -s llm.atko.ai --key-type llm_api --force)
+sed -i '' "s|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=${NEW_KEY}|" briefing-agent/.env
+```
+
+This token is a short-lived (~1 hour) Okta access token, not a permanent
+`sk-...` key — when it expires you'll hit the same error again; re-run the
+snippet above and restart whichever process reads `.env` (`python main.py`
+or `streamlit run app.py`), since `python-dotenv` only loads the file once
+at process start. If you don't have `ocm`, ask whoever provisioned your
+tenant for a direct Anthropic key instead and leave `ANTHROPIC_BASE_URL`
+unset.
 
 ## 7. Streamlit front end with Okta login
 
@@ -225,6 +241,16 @@ a direct key or the proxy's base URL (`ANTHROPIC_BASE_URL`).
 same `main.py` pipeline, gated behind a real Okta login (Authorization
 Code flow) rather than the CLI's no-user mode.
 
+- **Gotcha:** the very first time `streamlit` runs on a machine (or after
+  `~/.streamlit/` is wiped, e.g. a fresh machine/user), it blocks on an
+  interactive "Welcome to Streamlit! ... Email:" prompt on stdin before it
+  binds the port. Harmless if run in a real terminal (just hit Enter), but
+  it hangs forever — no port, no error — if launched from a script/agent
+  with no attached stdin. Fix: pre-seed the credentials file once so it's
+  never asked:
+  ```bash
+  mkdir -p ~/.streamlit && printf '[general]\nemail = ""\n' > ~/.streamlit/credentials.toml
+  ```
 - Reuses the front-door app from step 5 as the login client
   (`OKTA_LOGIN_CLIENT_ID`/`SECRET`/`OKTA_LOGIN_REDIRECT_URI` in `.env`, e.g.
   `http://localhost:8501`) — add that redirect URI to the app's
