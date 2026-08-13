@@ -9,8 +9,11 @@ Usage: python main.py
 """
 
 import os
+import subprocess
+from pathlib import Path
+
 from dotenv import load_dotenv
-from anthropic import Anthropic
+from anthropic import Anthropic, AuthenticationError
 
 from mcp_client import MCPClient
 from okta_auth import ConsentRequired, get_client_credentials_token, get_sts_token_for_user, get_vaulted_secret, get_xaa_token_for_user, token_expiry_ts
@@ -133,26 +136,57 @@ def print_receipts(receipts: list):
 
 LANGUAGE_NAMES = {"en": "English", "es": "Latin American Spanish", "pt-BR": "Brazilian Portuguese"}
 
+LITELLM_HOST = "llm.atko.ai"
+ENV_PATH = Path(__file__).parent / ".env"
+
+
+def _is_expired_litellm_key(exc: AuthenticationError) -> bool:
+    body = exc.body
+    return isinstance(body, dict) and body.get("error", {}).get("type") == "expired_key"
+
+
+def _refresh_litellm_key() -> None:
+    """Okta-internal LiteLLM proxy tokens (see .env.example) are short-lived
+    (~1hr) -- this refreshes ANTHROPIC_API_KEY on demand instead of needing
+    a manual `ocm auth litellm ...` + app restart every time one expires
+    mid-session. Only relevant for Okta employees using that proxy; a real
+    (non-expiring) Anthropic key never hits this path since it never raises
+    expired_key. Also persists the new key to .env so a later full restart
+    starts fresh too, not just this process's in-memory os.environ."""
+    result = subprocess.run(
+        ["ocm", "auth", "litellm", "-s", LITELLM_HOST, "--key-type", "llm_api", "--force"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    new_key = result.stdout.strip().splitlines()[-1].strip()
+    os.environ["ANTHROPIC_API_KEY"] = new_key
+    if ENV_PATH.exists():
+        lines = ENV_PATH.read_text().splitlines()
+        lines = [f"ANTHROPIC_API_KEY={new_key}" if line.startswith("ANTHROPIC_API_KEY=") else line for line in lines]
+        ENV_PATH.write_text("\n".join(lines) + "\n")
+
 
 def narrate(data: dict, lang: str = "en") -> str:
-    client = Anthropic()
     language_line = f" Write the entire briefing in {LANGUAGE_NAMES.get(lang, 'English')}."
-    message = client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=800,
-        messages=[{
-            "role": "user",
-            "content": (
-                "Write a concise Monday morning team-lead briefing from whichever of this "
-                "raw data is present (org/time-off, budgets, tickets, system alerts, team "
-                "shoutouts -- only cover what's actually in the data below). Use short "
-                "sections with headers, call out anything that needs attention today, and "
-                "if shoutouts are present end on those as a nice morale note."
-                f"{language_line}\n\n"
-                f"{data}"
-            ),
-        }],
+    prompt = (
+        "Write a concise Monday morning team-lead briefing from whichever of this "
+        "raw data is present (org/time-off, budgets, tickets, system alerts, team "
+        "shoutouts -- only cover what's actually in the data below). Use short "
+        "sections with headers, call out anything that needs attention today, and "
+        "if shoutouts are present end on those as a nice morale note."
+        f"{language_line}\n\n"
+        f"{data}"
     )
+    kwargs = dict(model="claude-sonnet-5", max_tokens=800, messages=[{"role": "user", "content": prompt}])
+    try:
+        message = Anthropic().messages.create(**kwargs)
+    except AuthenticationError as e:
+        if not _is_expired_litellm_key(e):
+            raise
+        _refresh_litellm_key()
+        message = Anthropic().messages.create(**kwargs)  # retry once with the fresh key
     return "".join(block.text for block in message.content if block.type == "text")
 
 

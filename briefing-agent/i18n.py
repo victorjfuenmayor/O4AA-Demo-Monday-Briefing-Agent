@@ -105,6 +105,11 @@ TEXT = {
         "es": "(architecture.png aún no se exportó a briefing-agent/assets/)",
         "pt-BR": "(architecture.png ainda não foi exportado para briefing-agent/assets/)",
     },
+    "architecture_zoom_hint": {
+        "en": "Scroll to zoom, drag to pan, double-click to zoom in a step, or use the ⤢ button to re-fit.",
+        "es": "Desplázate para hacer zoom, arrastra para mover, doble clic para acercar un paso, o usa el botón ⤢ para reajustar.",
+        "pt-BR": "Role para dar zoom, arraste para mover, duplo clique para aproximar um passo, ou use o botão ⤢ para reajustar.",
+    },
     "mcp_vs_resource_popover": {
         "en": "❓ MCP Server vs Resource Server — what's the difference?",
         "es": "❓ MCP Server vs Resource Server: ¿cuál es la diferencia?",

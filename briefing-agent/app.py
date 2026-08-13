@@ -3,8 +3,10 @@
 Usage: streamlit run app.py
 """
 
+import base64
 import json
 import time
+import uuid
 from pathlib import Path
 
 import streamlit as st
@@ -107,6 +109,109 @@ PATTERN_IMAGES = {
 }
 
 
+def _image_data_uri(path: Path) -> str:
+    """Base64 data: URI for a local PNG -- lets a components.html() srcdoc
+    iframe render it directly (its relative-URL resolution has nothing to
+    do with this app's server), with zero server-side re-encoding/resizing
+    in between, unlike routing it through st.image()'s media endpoint."""
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+
+
+def _render_zoomable_image(data_uri: str, height: int = 650):
+    """Pan/zoom viewer for a diagram at full native resolution: fits the
+    whole image on load, then scroll-wheel (zoom at cursor), click-drag
+    (pan), double-click (zoom step), and +/-/reset controls to inspect
+    detail beyond what fitting the dialog would otherwise show. The image
+    itself is only ever displayed, never resampled by this viewer -- the
+    PNG's own resolution is the ceiling on "quality," this just stops the
+    dialog's layout from being the ceiling too."""
+    viewer_id = uuid.uuid4().hex
+    components.html(
+        f"""
+        <div id="stage-{viewer_id}" style="position:relative;width:100%;height:{height}px;
+            overflow:hidden;background:#0e1117;border-radius:8px;cursor:grab;">
+          <div style="position:absolute;top:8px;right:8px;z-index:10;display:flex;gap:6px;
+              align-items:center;font-family:inherit;">
+            <span id="label-{viewer_id}" style="color:#fafafa;background:rgba(0,0,0,0.55);
+                padding:0.25em 0.6em;border-radius:0.4em;font-size:0.85rem;">100%</span>
+            <button id="out-{viewer_id}" title="Zoom out" style="{_ZOOM_BTN_STYLE}">−</button>
+            <button id="reset-{viewer_id}" title="Fit to view" style="{_ZOOM_BTN_STYLE}">⤢</button>
+            <button id="in-{viewer_id}" title="Zoom in" style="{_ZOOM_BTN_STYLE}">+</button>
+          </div>
+          <img id="img-{viewer_id}" src="{data_uri}" draggable="false"
+              style="position:absolute;top:0;left:0;transform-origin:0 0;user-select:none;" />
+        </div>
+        <script>
+        (function() {{
+            const stage = document.getElementById("stage-{viewer_id}");
+            const img = document.getElementById("img-{viewer_id}");
+            const label = document.getElementById("label-{viewer_id}");
+            let scale = 1, fitScale = 1, tx = 0, ty = 0, dragging = false, sx, sy, stx, sty;
+
+            function apply() {{
+                img.style.transform = `translate(${{tx}}px, ${{ty}}px) scale(${{scale}})`;
+                label.textContent = Math.round((scale / fitScale) * 100) + "%";
+            }}
+
+            function fit() {{
+                const cw = stage.clientWidth, ch = stage.clientHeight;
+                const iw = img.naturalWidth, ih = img.naturalHeight;
+                fitScale = Math.min(cw / iw, ch / ih);
+                scale = fitScale;
+                tx = (cw - iw * scale) / 2;
+                ty = (ch - ih * scale) / 2;
+                apply();
+            }}
+            if (img.complete) fit(); else img.onload = fit;
+
+            function zoomAt(factor, clientX, clientY) {{
+                const rect = stage.getBoundingClientRect();
+                const cx = clientX - rect.left, cy = clientY - rect.top;
+                const next = Math.min(Math.max(scale * factor, fitScale * 0.4), Math.max(4, fitScale * 10));
+                tx = cx - (cx - tx) * (next / scale);
+                ty = cy - (cy - ty) * (next / scale);
+                scale = next;
+                apply();
+            }}
+
+            stage.addEventListener("wheel", (e) => {{
+                e.preventDefault();
+                zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+            }}, {{ passive: false }});
+            stage.addEventListener("dblclick", (e) => zoomAt(1.8, e.clientX, e.clientY));
+            stage.addEventListener("mousedown", (e) => {{
+                dragging = true; sx = e.clientX; sy = e.clientY; stx = tx; sty = ty;
+                stage.style.cursor = "grabbing";
+            }});
+            window.addEventListener("mousemove", (e) => {{
+                if (!dragging) return;
+                tx = stx + (e.clientX - sx); ty = sty + (e.clientY - sy);
+                apply();
+            }});
+            window.addEventListener("mouseup", () => {{ dragging = false; stage.style.cursor = "grab"; }});
+
+            document.getElementById("in-{viewer_id}").onclick = () => {{
+                const r = stage.getBoundingClientRect();
+                zoomAt(1.4, r.left + r.width / 2, r.top + r.height / 2);
+            }};
+            document.getElementById("out-{viewer_id}").onclick = () => {{
+                const r = stage.getBoundingClientRect();
+                zoomAt(1 / 1.4, r.left + r.width / 2, r.top + r.height / 2);
+            }};
+            document.getElementById("reset-{viewer_id}").onclick = fit;
+        }})();
+        </script>
+        """,
+        height=height,
+    )
+
+
+_ZOOM_BTN_STYLE = (
+    "background:rgba(255,255,255,0.9);color:#0e1117;border:none;border-radius:0.4em;"
+    "width:1.8em;height:1.8em;font-size:1rem;font-weight:700;cursor:pointer;line-height:1;"
+)
+
+
 @st.dialog(t("expand_diagram"), width="large")
 def _show_pattern_diagram(image_path, pattern_name):
     st.caption(f"🗺️ {pattern_name}")
@@ -203,10 +308,8 @@ def _handle_session_expired():
 @st.dialog(t("architecture_expander"), width="large")
 def _show_architecture_diagram():
     if ARCHITECTURE_DIAGRAM.exists():
-        # No width cap here on purpose -- default width="content" renders
-        # the PNG at its native resolution, so it's never up- or
-        # down-scaled the way the fixed-width inline version was.
-        st.image(str(ARCHITECTURE_DIAGRAM))
+        st.caption(t("architecture_zoom_hint"))
+        _render_zoomable_image(_image_data_uri(ARCHITECTURE_DIAGRAM), height=650)
     else:
         st.caption(t("architecture_missing"))
 
@@ -225,17 +328,21 @@ def _render_consent_link(resource_label, url, link_text):
     popup's own content to auto-close it, since its post-consent redirect
     lands on an Okta-owned URL we don't control (see _run_consent_flow's
     docstring)."""
+    button_id = "grant-" + uuid.uuid4().hex
     components.html(
         f"""
-        <button onclick="
-            window.parent.__consentPopups = window.parent.__consentPopups || {{}};
-            window.parent.__consentPopups[{json.dumps(resource_label)}] =
-                window.open({json.dumps(url)}, {json.dumps("consent_" + resource_label)});
-        " style="display:inline-block;padding:0.5em 1em;background:#FF4B4B;
+        <button id="{button_id}" style="display:inline-block;padding:0.5em 1em;background:#FF4B4B;
             color:white;border:none;border-radius:0.5em;font-weight:600;
             font-size:1rem;font-family:inherit;cursor:pointer;">
             {link_text}
         </button>
+        <script>
+        document.getElementById({json.dumps(button_id)}).addEventListener("click", function() {{
+            window.parent.__consentPopups = window.parent.__consentPopups || {{}};
+            window.parent.__consentPopups[{json.dumps(resource_label)}] =
+                window.open({json.dumps(url)}, {json.dumps("consent_" + resource_label)});
+        }});
+        </script>
         """,
         height=50,
     )
