@@ -375,27 +375,27 @@ Veja `SETUP.md` §9 para o passo a passo completo de ambos.
     },
     "consent_info_new_tab": {
         "en": (
-            "The link below opens Okta's consent screen in a **new tab** on purpose — it redirects "
+            "The button below opens Okta's consent screen in a **new tab** on purpose — it redirects "
             "to an Okta-owned page, not back into this app, so opening it here would log you out of "
-            "this session. Approve access there, then just switch back to **this tab** — it's "
-            "already checking in the background and will continue automatically the moment access "
-            "is granted, no need to click anything else here."
+            "this session. Approve access there — that tab will **close itself automatically** the "
+            "moment access is granted, and this one is already checking in the background and will "
+            "continue on its own too, no need to click anything else here."
         ),
         "es": (
-            "El enlace de abajo abre la pantalla de consentimiento de Okta en una **pestaña "
+            "El botón de abajo abre la pantalla de consentimiento de Okta en una **pestaña "
             "nueva** a propósito — redirige a una página propiedad de Okta, no de vuelta a esta "
-            "app, así que abrirlo aquí cerraría tu sesión. Aprueba el acceso ahí y luego simplemente "
-            "vuelve a **esta pestaña** — ya está verificando en segundo plano y continuará "
-            "automáticamente en el momento en que se otorgue el acceso, sin necesidad de hacer clic "
+            "app, así que abrirlo aquí cerraría tu sesión. Aprueba el acceso ahí — esa pestaña se "
+            "**cerrará automáticamente** en el momento en que se otorgue el acceso, y esta ya está "
+            "verificando en segundo plano y también continuará sola, sin necesidad de hacer clic "
             "en nada más aquí."
         ),
         "pt-BR": (
-            "O link abaixo abre a tela de consentimento do Okta em uma **nova aba** de "
+            "O botão abaixo abre a tela de consentimento do Okta em uma **nova aba** de "
             "propósito — ele redireciona para uma página do próprio Okta, não de volta para "
-            "este app, então abri-lo aqui encerraria sua sessão. Aprove o acesso lá e depois "
-            "apenas volte para **esta aba** — ela já está verificando em segundo plano e vai "
-            "continuar automaticamente no momento em que o acesso for concedido, sem precisar "
-            "clicar em mais nada aqui."
+            "este app, então abri-lo aqui encerraria sua sessão. Aprove o acesso lá — essa aba vai "
+            "**se fechar automaticamente** no momento em que o acesso for concedido, e esta aqui já "
+            "está verificando em segundo plano e também vai continuar por conta própria, sem "
+            "precisar clicar em mais nada aqui."
         ),
     },
     "grant_access_link": {

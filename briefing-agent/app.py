@@ -3,10 +3,12 @@
 Usage: streamlit run app.py
 """
 
+import json
 import time
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
 from auth import (
@@ -213,6 +215,56 @@ CONSENT_POLL_INTERVAL_SECONDS = 3
 CONSENT_POLL_TIMEOUT_SECONDS = 90
 
 
+def _render_consent_link(resource_label, url, link_text):
+    """Renders the "Grant access" button via a real window.open() (instead
+    of a plain <a target="_blank">) and stashes the resulting window handle
+    on the top-level app window (window.parent from inside this component's
+    srcdoc iframe -- same-origin, so this is allowed) keyed by resource
+    label. That handle is what lets _close_consent_popup() below close this
+    tab later purely from the opener side -- we can never reach into the
+    popup's own content to auto-close it, since its post-consent redirect
+    lands on an Okta-owned URL we don't control (see _run_consent_flow's
+    docstring)."""
+    components.html(
+        f"""
+        <button onclick="
+            window.parent.__consentPopups = window.parent.__consentPopups || {{}};
+            window.parent.__consentPopups[{json.dumps(resource_label)}] =
+                window.open({json.dumps(url)}, {json.dumps("consent_" + resource_label)});
+        " style="display:inline-block;padding:0.5em 1em;background:#FF4B4B;
+            color:white;border:none;border-radius:0.5em;font-weight:600;
+            font-size:1rem;font-family:inherit;cursor:pointer;">
+            {link_text}
+        </button>
+        """,
+        height=50,
+    )
+
+
+def _close_consent_popup(resource_label):
+    """Closes the popup opened for resource_label, if still open. Cross-origin
+    windows can't be inspected, but a WindowProxy's own close() is one of the
+    few operations still allowed across origins -- so this works even though
+    the popup is by now showing Okta's own post-consent page."""
+    if not resource_label:
+        return
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            const popups = window.parent.__consentPopups;
+            const w = popups && popups[{json.dumps(resource_label)}];
+            if (w) {{
+                try {{ w.close(); }} catch (e) {{}}
+                delete popups[{json.dumps(resource_label)}];
+            }}
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+
+
 @st.dialog(t("consent_dialog_title"))
 def _run_consent_flow(selected_keys):
     """Okta's hosted consent screen can't be embedded here (it blocks
@@ -240,6 +292,11 @@ def _run_consent_flow(selected_keys):
             _handle_session_expired()
         except ConsentRequired as e:
             if e.resource_label != shown_resource:
+                if shown_resource is not None:
+                    # A different resource is now asking for consent, which
+                    # only happens once the previous one succeeded (HR then
+                    # Ticketing) -- close its now-stale popup automatically.
+                    _close_consent_popup(shown_resource)
                 shown_resource = e.resource_label
                 deadline = time.time() + CONSENT_POLL_TIMEOUT_SECONDS  # fresh window per resource
                 explanations = {
@@ -251,17 +308,7 @@ def _run_consent_flow(selected_keys):
                     st.markdown(explanations.get(e.connection_type, t("consent_explanation_default")))
                     st.caption(t("consent_contrast_caption"))
                     st.info(t("consent_info_new_tab"))
-                    # A raw anchor with target="_blank" set explicitly --
-                    # guarantees the new-tab behavior this whole flow
-                    # depends on, rather than relying on whatever a plain
-                    # markdown link defaults to.
-                    st.markdown(
-                        f'<a href="{e.interaction_uri}" target="_blank" '
-                        'style="display:inline-block;padding:0.5em 1em;background:#FF4B4B;'
-                        'color:white;border-radius:0.5em;text-decoration:none;font-weight:600;">'
-                        f"{t('grant_access_link')}</a>",
-                        unsafe_allow_html=True,
-                    )
+                    _render_consent_link(e.resource_label, e.interaction_uri, t("grant_access_link"))
             if time.time() > deadline:
                 status_area.warning(t("consent_timeout_fallback"))
                 return
@@ -269,6 +316,10 @@ def _run_consent_flow(selected_keys):
             time.sleep(CONSENT_POLL_INTERVAL_SECONDS)
             continue
 
+        # Reaching here means the retry succeeded with no ConsentRequired at
+        # all -- if a popup was open for whichever resource was asked last,
+        # its access has just been granted, so close it automatically too.
+        _close_consent_popup(shown_resource)
         status_area.empty()
         with st.spinner(t("narrating_spinner")):
             briefing = narrate(data, lang=current_lang())

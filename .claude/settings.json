@@ -25,7 +25,8 @@
       "Bash(nohup \"/Users/victor.fuenmayor/Demo/O4AA Hackathon/.venv/bin/streamlit\" run app.py --server.headless true --server.port 8501)",
       "Bash(curl -s http://localhost:8501/_stcore/health)",
       "Read(//private/tmp/**)",
-      "Bash(\"/Users/victor.fuenmayor/Demo/O4AA Hackathon/.venv/bin/python\" -m py_compile okta_auth.py)"
+      "Bash(\"/Users/victor.fuenmayor/Demo/O4AA Hackathon/.venv/bin/python\" -m py_compile okta_auth.py)",
+      "Bash(lsof -iTCP -sTCP:LISTEN -P)"
     ]
   }
 }
